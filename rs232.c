@@ -128,7 +128,6 @@ int rs232_open(const char *uart,
 	return (fd);
 }
 
-
 int rs232_read(int fd, unsigned char *buf, int size)
 {
 	int n;
@@ -137,7 +136,6 @@ int rs232_read(int fd, unsigned char *buf, int size)
 
 	return(n);
 }
-
 
 int rs232_send_byte(int fd, unsigned char byte)
 {
@@ -149,12 +147,10 @@ int rs232_send_byte(int fd, unsigned char byte)
 	return(0);
 }
 
-
 int rs232_send_buf(int fd, unsigned char *buf, int size)
 {
 	return(write(fd, buf, size));
 }
-
 
 void rs232_close(int fd)
 {
@@ -284,4 +280,3 @@ void rs232_cputs(int fd, const char *text)  /* sends a string to serial port */
 {
 	while(*text != 0)   rs232_send_byte(fd, *(text++));
 }
-

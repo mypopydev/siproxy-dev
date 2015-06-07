@@ -257,7 +257,7 @@ enum EVENT {
 	
 	/* sip event */
 	EVT_SIP_CALLING = EVT_MODEM_MAX + 1,     /* SIP_A -> SIP_B */
-	EVT_SIP_INCOMING,    /* SIP_A <- SIP_B */
+	EVT_SIP_INCOMING,                        /* SIP_A <- SIP_B */
 	EVT_SIP_EARLY,       
 	EVT_SIP_CONNECTING,  
 	EVT_SIP_CONFIRMED,   
@@ -565,7 +565,6 @@ static void sip_event(telnet_t *telnet, telnet_event_t *ev,
 		char *str = (char *)ev->data.buffer;
 		
 		for (token = strtok(str, delim); token; token = strtok(NULL, delim)) {
-			//printf("token=%s\n", token);
 			sip_event_queue(token, strlen(token));
 		}
 		break;
@@ -629,6 +628,7 @@ void state_init(struct evt *evt)
 			siproxy.init_dir = INIT_FROM_MODEM;
 
 			siproxy.modem_state = STATE_INCOMING;
+			
 			sip_make_call(siproxy.sip_peer);
 			siproxy.sip_state = STATE_CALLING;
 
@@ -661,6 +661,7 @@ void state_init(struct evt *evt)
 			siproxy.init_dir = INIT_FROM_SIP;
 
 			siproxy.sip_state = STATE_INCOMING;
+			
 			modem_make_call(siproxy.uart_fd, "13761124413"); /* FIXME: fix the number */
 			siproxy.modem_state = STATE_CALLING;
 
@@ -695,6 +696,7 @@ void state_incoming(struct evt *evt)
 	case EVT_MODEM_COLP:
 		if (siproxy.init_dir == INIT_FROM_SIP) {
 			siproxy.modem_state = STATE_CONFIRMED;
+			
 			sip_answer_call();
 			siproxy.sip_state = STATE_CONFIRMED;
 
@@ -723,6 +725,7 @@ void state_incoming(struct evt *evt)
 	case EVT_SIP_CONFIRMED:
 		if (siproxy.init_dir == INIT_FROM_MODEM) {
 			siproxy.sip_state = STATE_CONFIRMED;
+			
 			modem_answer_call(siproxy.uart_fd);
 			siproxy.modem_state = STATE_CONFIRMED;
 
@@ -1074,7 +1077,7 @@ int main(int argc, char **argv)
 
 	/* check usage */
 	if (argc != 5) {
-		fprintf(stderr, "Usage:\n ./siproxy <host> <port> <sip> <uart>\n");
+		fprintf(stderr, "Usage:\n ./siproxy <host> <port> <sip_peer> <uart>\n");
 		return -1;
 	}
 
