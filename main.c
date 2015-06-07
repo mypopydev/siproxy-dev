@@ -19,10 +19,21 @@
 #include <termios.h>
 #include <unistd.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include "telnet.h"
 #include "rs232.h"
 #include "match.h"
+#include "queue.h"
+
+#define NELEMS(array) (sizeof(array) / sizeof(array[0]))
+
+struct queue events_queue; /* event queue */
+
+struct evt {
+	int event;
+	char val[1024];
+};
 
 /* Read characters from 'fd' until a newline is encountered. If a newline
   character is not encountered in the first (n - 1) bytes, then the excess
@@ -34,8 +45,8 @@
 static ssize_t
 read_line(int fd, void *buffer, size_t n)
 {
-	ssize_t num_read;                    /* # of bytes fetched by last read() */
-	size_t tot_read;                     /* total bytes read so far */
+	ssize_t num_read;                       /* # of bytes fetched by last read() */
+	size_t tot_read;                        /* total bytes read so far */
 	char *buf;
 	char ch;
 	
@@ -44,26 +55,26 @@ read_line(int fd, void *buffer, size_t n)
 		return -1;
 	}
 	
-	buf = buffer;                       /* no pointer arithmetic on "void *" */
+	buf = buffer;                           /* no pointer arithmetic on "void *" */
 	
 	tot_read = 0;
 	for (;;) {
 		num_read = read(fd, &ch, 1);
 		
 		if (num_read == -1) {
-			if (errno == EINTR)         /* interrupted --> restart read() */
+			if (errno == EINTR)     /* interrupted --> restart read() */
 				continue;
 			else
-				return -1;              /* some other error */
+				return -1;      /* some other error */
 			
 		} else if (num_read == 0) {     /* EOF */
-			if (tot_read == 0)          /* no bytes read; return 0 */
+			if (tot_read == 0)      /* no bytes read; return 0 */
 				return 0;
-			else                        /* some bytes read; add '\0' */
+			else                    /* some bytes read; add '\0' */
 				break;
 			
 		} else {                        /* 'numRead' must be 1 if we get here */
-			if (tot_read < n - 1) {     /* siscard > (n - 1) bytes */
+			if (tot_read < n - 1) { /* siscard > (n - 1) bytes */
 				tot_read++;
 				*buf++ = ch;
 			}
@@ -118,91 +129,381 @@ static int modem_cmd(int uart, char *cmd)
 	return 0;
 }
 
+static int modem_make_call(int uart, char *num)
+{
+	char cmd[128] = {0};
+	snprintf(cmd, sizeof(cmd), "ATD%s;\r\n", num);
+	return modem_cmd(uart, cmd);
+}
+
+static int modem_answer_call(int uart)
+{
+	return modem_cmd(uart, "ATA\r\n");
+}
+
+static int modem_hangup_call(int uart)
+{
+	return modem_cmd(uart, "ATH\r\n");
+}
+
 static telnet_t *telnet;
 static int do_echo;
 
+/*
+ * state define
+ */
 enum STATE {
-	STATE_NULL = 0,
-	STATE_INCOMING,    /* SIP_A <- SIP_B */
-	STATE_CALLING,     /* SIP_A -> SIP_B */
-	STATE_EARLY,       //
-	STATE_CONNECTING,  //
-	STATE_CONFIRMED,   //
-	STATE_DISCONNCTD,  //
-	STATE_TERMINATED,  //
-	STATE_UNKONW,
+	STATE_INIT = 0,
+	STATE_INCOMING,    /* SIP_A <- SIP_B or modem_A <- modem_O */
+	STATE_CALLING,     /* SIP_A -> SIP_B or modem_A -> modem_O */
+	STATE_EARLY,       
+	STATE_CONNECTING,  
+	STATE_CONFIRMED,   
+	STATE_DISCONNCTD,  
+	STATE_TERMINATED,  
+	STATE_UNKNOW,
 };
 
-/* state name define */
-static const char *inv_state_names[] =
-{
-	"NULL",
-	"INCOMING",    // SIP_A <- SIP_B or modem_A <- modem_O
-	"CALLING",     // SIP_A -> SIP_B or modem_A -> modem_O
-	"EARLY",       //
-	"CONNECTING",  //
-	"CONFIRMED",   //
-	"DISCONNCTD",  //
-	"TERMINATED",  //
-	"UNKNOW"
+typedef void (*callback)(struct evt *evt);
+
+/* state machine */
+void state_init(struct evt *evt);
+void state_incoming(struct evt *evt);
+void state_calling(struct evt *evt);
+void state_early(struct evt *evt);
+void state_connecting(struct evt *evt);
+void state_confirmed(struct evt *evt);
+void state_disconnctd(struct evt *evt);
+void state_terminated(struct evt *evt);
+void state_unknow(struct evt *evt);
+
+struct state_tbl {
+	int state;
+	char *str;
+	callback func;
+} state_tbl[] = {
+	{
+		.state = STATE_INIT,
+		.str = "IN INIT",
+		.func = state_init,
+	},
 	
+	{
+		.state = STATE_INCOMING,
+		.str = "CALL INCOMING",
+		.func = state_incoming,
+	},
+	
+	{
+		.state = STATE_CALLING,
+		.str = "IN CALLING",
+		.func = state_calling,
+	},
+	
+	{
+		.state = STATE_EARLY,
+		.str = "EARLY",
+		.func = state_early,
+	},
+	
+	{
+		.state = STATE_CONNECTING,
+		.str = "IN CONNECTING",
+		.func = state_connecting,
+	},
+	
+	{
+		.state = STATE_CONFIRMED,
+		.str = "CALL CONFIRMED",
+		.func = state_confirmed,
+	},
+	
+	{
+		.state = STATE_DISCONNCTD,
+		.str = "DISCONNCTD",
+		.func = state_disconnctd,
+	},
+	
+	{
+		.state = STATE_TERMINATED,
+		.str = "TERMINATED",
+		.func = state_terminated,
+	},
+	
+	{
+		.state = STATE_UNKNOW,
+		.str = "UNKNOW",
+		.func = state_unknow,
+	},
 };
 
+/*
+ * event define 
+ */
+
+/* modem event */
 enum EVENT {
-	EVT_NONE = 0,
+	EVT_NONE = 1,
 
 	/* modem event */
-	EVT_MODEM_CALLING,     /* SIP_A -> SIP_B */
-	EVT_MODEM_INCOMING,    /* SIP_A <- SIP_B */
-	EVT_MODEM_EARLY,       //
-	EVT_MODEM_CONNECTING,  //
-	EVT_MODEM_CONFIRMED,   //
-	EVT_MODEM_BUSY,        //
-	EVT_MODEM_DISCONNCTD,  //
-	EVT_MODEM_TERMINATED,  //
+	EVT_MODEM_COLP,        /* +COLP:xxx, the call is connectd */
+	EVT_MODEM_CLIP,        /* +CLIP:xxx, the call incomming  */
+	EVT_MODEM_NO_CARRIER,  /* NO CARRIER */
+	EVT_MODEM_OK,          /* OK */  
+	EVT_MODEM_ERROR,       /* ERROR */   
 
+	EVT_MODEM_MAX,         /* last modem event */
+
+	
 	/* sip event */
-	EVT_SIP_CALLING,     /* SIP_A -> SIP_B */
+	EVT_SIP_CALLING = EVT_MODEM_MAX + 1,     /* SIP_A -> SIP_B */
 	EVT_SIP_INCOMING,    /* SIP_A <- SIP_B */
-	EVT_SIP_EARLY,       //
-	EVT_SIP_CONNECTING,  //
-	EVT_SIP_CONFIRMED,   //
-	EVT_SIP_DISCONNCTD,  //
-	EVT_SIP_TERMINATED,  //
+	EVT_SIP_EARLY,       
+	EVT_SIP_CONNECTING,  
+	EVT_SIP_CONFIRMED,   
+	EVT_SIP_DISCONNCTD,  
 
 	EVT_UNKNOW,
 };
 
+struct event_map {
+	enum EVENT event;
+	char regex[128];
+};
+
+struct event_map modem_events[] = {
+	{
+		.event = EVT_NONE,
+		.regex = "NONE",
+	},
+
+	{
+		.event = EVT_MODEM_COLP,
+		.regex = "+COLP",
+	},
+
+	{
+		.event = EVT_MODEM_CLIP,
+		.regex = "+CLIP",
+	},
+
+	{
+		.event = EVT_MODEM_NO_CARRIER,
+		.regex = "NO CARRIER",
+	},
+
+	{
+		.event = EVT_MODEM_OK,
+		.regex = "OK",
+	},
+
+	{
+		.event = EVT_MODEM_ERROR,
+		.regex = "ERROR",
+	},
+};
+
+struct event_map sip_events[] = {
+	{
+		.event = EVT_SIP_CALLING,
+		.regex = "state changed to CALLING",
+	},
+
+	{
+		.event = EVT_SIP_INCOMING,
+		.regex = "Press ca a to answer",
+	},
+
+	{
+		.event = EVT_SIP_EARLY,
+		.regex = "NONE",
+	},
+
+	{
+		.event = EVT_SIP_CONNECTING,
+		.regex = "state changed to CONNECTING",
+	},
+
+	{
+		.event = EVT_SIP_CONFIRMED,
+		.regex = "state changed to CONFIRMED",
+	},
+
+	{
+		.event = EVT_SIP_DISCONNCTD,
+		.regex = "is DISCONNECTED",
+	},
+};
+
+static enum EVENT find_event(char *buf, int size, struct event_map *events , int num)
+{
+	int i;
+
+	for (i = 0; i < num; i++) {
+		if (match(events[i].regex, buf)) {
+			return events[i].event;
+		}
+	}
+	
+	return EVT_NONE;
+}
+
+static void modem_event_queue(char *buf, int size)
+{
+	enum EVENT event = EVT_NONE;
+
+	event = find_event(buf, size, modem_events, NELEMS(modem_events));
+	if (event != EVT_NONE) {
+		struct evt *evt = malloc(sizeof(*evt));
+		if (!evt) {
+			fprintf(stderr, "malloc failed: %s\n", strerror(errno));
+			return;
+		}
+		evt->event = event;
+		snprintf(evt->val, sizeof(evt->val), "%s", buf);
+		
+		queue_add(&events_queue, evt, evt->event);
+	}
+}
+
+static void sip_event_queue(char *buf, int size)
+{
+	enum EVENT event = EVT_NONE;
+
+	event = find_event(buf, size, sip_events, NELEMS(sip_events));
+	if (event != EVT_NONE) {
+		struct evt *evt = malloc(sizeof(*evt));
+		if (!evt) {
+			fprintf(stderr, "malloc failed: %s\n", strerror(errno));
+			return;
+		}
+		evt->event = event;
+		snprintf(evt->val, sizeof(evt->val), "%s", buf);
+		
+		queue_add(&events_queue, evt, evt->event);
+	}
+}
+
 /* the call init from */
 enum CALL_INIT {
 	INIT_NONE,
-	INIT_MODEM,
-	INIT_SIP,
+	INIT_FROM_MODEM,
+	INIT_FROM_SIP,
 };
 
-struct siproxy {
+struct siproxy_ctrl {
+	int sip_state;
+	int modem_state;
+
 	int state;
 	
 	int init_dir;
 
-	char uart[255];
-	char sip_peer[255];
+	char uart[255];        /* uart name for modem control */
+	char sip_peer[255];    /* sip peer URL */
 
 	int uart_fd;
 	int sock_fd;
+
+	pthread_t thread;      /* event handler thread */
+
+	int dbg_level;
+} siproxy = {
+	.sip_state = STATE_INIT,
+	.modem_state = STATE_INIT,
+
+	.state = STATE_INIT,
+
+	.init_dir = INIT_NONE,
+
+	.uart_fd = -1,
+	.sock_fd = -1,
+
+	.thread = -1,
+
+	.dbg_level = 0,
 };
+
+static void telnet_input(char *buffer, int size) 
+{
+	static char crlf[] = { '\r', '\n' };
+	int i;
+
+	printf("\n\nS:>>sent : ");
+	for (i = 0; i != size; ++i) {
+		/* if we got a CR or LF, replace with CRLF
+		 * NOTE that usually you'd get a CR in UNIX, but in raw
+		 * mode we get LF instead (not sure why)
+		 */
+		if (buffer[i] == '\r' || buffer[i] == '\n') {
+			if (do_echo)
+				printf("\r\n");
+			telnet_send(telnet, crlf, 2);
+		} else {
+			if (do_echo)
+				putchar(buffer[i]);
+			telnet_send(telnet, buffer + i, 1);
+		}
+	}
+	fflush(stdout);
+}
+
+static void sip_make_call(char *peer)
+{
+	char cmd[256] = {0};
+	snprintf(cmd, sizeof(cmd), "call new %s\r\n", peer);
+	telnet_input(cmd, strlen(cmd));
+}
+
+static void sip_answer_call()
+{
+	char cmd[256] = {0};
+	snprintf(cmd, sizeof(cmd), "call answer 200\r\n");
+	telnet_input(cmd, strlen(cmd));
+}
+
+static void sip_hangup_call()
+{
+	char cmd[256] = {0};
+	snprintf(cmd, sizeof(cmd), "hA\r\n");
+	telnet_input(cmd, strlen(cmd));
+}
 
 static const telnet_telopt_t telopts[] = {
-	{ TELNET_TELOPT_ECHO,		TELNET_WONT, TELNET_DO   },
-	{ TELNET_TELOPT_TTYPE,		TELNET_WILL, TELNET_DONT },
-	{ TELNET_TELOPT_COMPRESS2,	TELNET_WONT, TELNET_DO   },
-	{ TELNET_TELOPT_MSSP,		TELNET_WONT, TELNET_DO   },
-	{ -1, 0, 0 }
+	{ 
+		.telopt = TELNET_TELOPT_ECHO,		
+		.us = TELNET_WONT,
+		.him = TELNET_DO   
+	},
+	
+	{ 
+		.telopt = TELNET_TELOPT_TTYPE,		
+		.us = TELNET_WILL, 
+		.him = TELNET_DONT 
+	},
+	
+	{ 
+		.telopt = TELNET_TELOPT_COMPRESS2,	
+		.us = TELNET_WONT, 
+		.him = TELNET_DO  
+	},
+	
+	{ 
+		.telopt = TELNET_TELOPT_MSSP,		
+		.us = TELNET_WONT, 
+		.him = TELNET_DO  
+	},
+	
+	{
+		.telopt = -1, 
+		.us = 0, 
+		.him = 0 
+	}
 };
 
-static void _cleanup(void)
+static void cleanup(void)
 {
-	//tcsetattr(STDOUT_FILENO, TCSADRAIN, &orig_tios);
+	/* do nothing now */
 }
 
 static void modem_event(unsigned char *buf, int n)
@@ -221,12 +522,11 @@ static void modem_event(unsigned char *buf, int n)
 		printf("T:<<recv : %s\n", (char *)buf);
 		
 	}
-	
-	//if ( n > 0 && match(respond, (char *)buf))
-	//	break;
-	/* XXX: get modem event */
-	
 	fflush(stdout);
+	
+	/* XXX: get modem event */
+	if (n > 0)
+		modem_event_queue((char *)buf, n);
 }
 
 static void _send(int sock, const char *buffer, size_t size)
@@ -258,8 +558,16 @@ static void sip_event(telnet_t *telnet, telnet_event_t *ev,
 	/* data received */
 	case TELNET_EV_DATA:
 		printf("S:%.*s\n", (int)ev->data.size, ev->data.buffer);
-		/* XXX: sip event */
+		/* XXX: get sip event */
 		fflush(stdout);
+		char delim[] = "\n";
+		char *token = NULL;
+		char *str = (char *)ev->data.buffer;
+		
+		for (token = strtok(str, delim); token; token = strtok(NULL, delim)) {
+			//printf("token=%s\n", token);
+			sip_event_queue(token, strlen(token));
+		}
 		break;
 	/* data must be sent */
 	case TELNET_EV_SEND:
@@ -267,7 +575,8 @@ static void sip_event(telnet_t *telnet, telnet_event_t *ev,
 		break;
 	/* request to enable remote feature (or receipt) */
 	case TELNET_EV_WILL:
-		/* we'll agree to turn off our echo if server wants us to stop */
+		/* we'll agree to turn off our echo if server
+		   wants us to stop */
 		if (ev->neg.telopt == TELNET_TELOPT_ECHO)
 			do_echo = 0;
 		break;
@@ -302,12 +611,461 @@ static void sip_event(telnet_t *telnet, telnet_event_t *ev,
 	}
 }
 
+static void siproxy_reset()
+{
+	siproxy.sip_state   = STATE_INIT;
+	siproxy.modem_state = STATE_INIT;
+		
+	siproxy.state = STATE_INIT;
+
+	siproxy.init_dir = INIT_NONE;
+}
+
+void state_init(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		if (siproxy.init_dir == INIT_NONE) {
+			siproxy.init_dir = INIT_FROM_MODEM;
+
+			siproxy.modem_state = STATE_INCOMING;
+			sip_make_call(siproxy.sip_peer);
+			siproxy.sip_state = STATE_CALLING;
+
+			siproxy.state = STATE_INCOMING;
+		}
+		break;
+		
+	case EVT_MODEM_COLP:
+		/* do nothing */
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		/* do nothing */
+		break;
+		
+	case EVT_MODEM_OK:
+		/* do nothing */
+		break;
+		
+	case EVT_MODEM_ERROR:
+		/* do nothing */
+		break;
+		
+	case EVT_SIP_CALLING:
+		/* do nothing */
+		break;
+		
+	case EVT_SIP_INCOMING:
+		if (siproxy.init_dir == INIT_NONE) {
+			siproxy.init_dir = INIT_FROM_SIP;
+
+			siproxy.sip_state = STATE_INCOMING;
+			modem_make_call(siproxy.uart_fd, "13761124413"); /* FIXME: fix the number */
+			siproxy.modem_state = STATE_CALLING;
+
+			siproxy.state = STATE_INCOMING;
+		}
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		/* do nothing */
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		/* do nothing */
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		/* do nothin */
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state_incoming(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		break;
+		
+	case EVT_MODEM_COLP:
+		if (siproxy.init_dir == INIT_FROM_SIP) {
+			siproxy.modem_state = STATE_CONFIRMED;
+			sip_answer_call();
+			siproxy.sip_state = STATE_CONFIRMED;
+
+			siproxy.state = STATE_CONFIRMED;
+		}
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		break;
+		
+	case EVT_MODEM_OK:
+		break;
+		
+	case EVT_MODEM_ERROR:
+		break;
+		
+	case EVT_SIP_CALLING:
+		break;
+		
+	case EVT_SIP_INCOMING:
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		if (siproxy.init_dir == INIT_FROM_MODEM) {
+			siproxy.sip_state = STATE_CONFIRMED;
+			modem_answer_call(siproxy.uart_fd);
+			siproxy.modem_state = STATE_CONFIRMED;
+
+			siproxy.state = STATE_CONFIRMED;
+		}
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state_calling(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		break;
+		
+	case EVT_MODEM_COLP:
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		break;
+		
+	case EVT_MODEM_OK:
+		break;
+		
+	case EVT_MODEM_ERROR:
+		break;
+		
+	case EVT_SIP_CALLING:
+		break;
+		
+	case EVT_SIP_INCOMING:
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state_early(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		break;
+		
+	case EVT_MODEM_COLP:
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		break;
+		
+	case EVT_MODEM_OK:
+		break;
+		
+	case EVT_MODEM_ERROR:
+		break;
+		
+	case EVT_SIP_CALLING:
+		break;
+		
+	case EVT_SIP_INCOMING:
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state_connecting(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		break;
+		
+	case EVT_MODEM_COLP:
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		break;
+		
+	case EVT_MODEM_OK:
+		break;
+		
+	case EVT_MODEM_ERROR:
+		break;
+		
+	case EVT_SIP_CALLING:
+		break;
+		
+	case EVT_SIP_INCOMING:
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state_confirmed(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		break;
+		
+	case EVT_MODEM_COLP:
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		if (siproxy.init_dir == INIT_FROM_SIP) {
+			sip_hangup_call();
+		}
+
+		if (siproxy.init_dir == INIT_FROM_MODEM) {
+			sip_hangup_call();
+		}
+		siproxy_reset();
+		break;
+		
+	case EVT_MODEM_OK:
+		break;
+		
+	case EVT_MODEM_ERROR:
+		break;
+		
+	case EVT_SIP_CALLING:
+		break;
+		
+	case EVT_SIP_INCOMING:
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		if (siproxy.init_dir == INIT_FROM_MODEM) {
+			modem_hangup_call(siproxy.uart_fd);
+		}
+
+		if (siproxy.init_dir == INIT_FROM_SIP) {
+			modem_hangup_call(siproxy.uart_fd);
+		}
+		siproxy_reset();
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state_disconnctd(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		break;
+		
+	case EVT_MODEM_COLP:
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		break;
+		
+	case EVT_MODEM_OK:
+		break;
+		
+	case EVT_MODEM_ERROR:
+		break;
+		
+	case EVT_SIP_CALLING:
+		break;
+		
+	case EVT_SIP_INCOMING:
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state_terminated(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		break;
+		
+	case EVT_MODEM_COLP:
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		break;
+		
+	case EVT_MODEM_OK:
+		break;
+		
+	case EVT_MODEM_ERROR:
+		break;
+		
+	case EVT_SIP_CALLING:
+		break;
+		
+	case EVT_SIP_INCOMING:
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state_unknow(struct evt *evt)
+{
+	switch (evt->event) {
+	case EVT_MODEM_CLIP:
+		break;
+		
+	case EVT_MODEM_COLP:
+		break;
+		
+	case EVT_MODEM_NO_CARRIER:
+		break;
+		
+	case EVT_MODEM_OK:
+		break;
+		
+	case EVT_MODEM_ERROR:
+		break;
+		
+	case EVT_SIP_CALLING:
+		break;
+		
+	case EVT_SIP_INCOMING:
+		break;
+		
+	case EVT_SIP_CONNECTING:
+		break;
+		
+	case EVT_SIP_CONFIRMED:
+		break;
+		
+	case EVT_SIP_DISCONNCTD:
+		break;
+		
+	default:
+		fprintf(stderr, "UNKNOW event\n");
+		break;
+	}
+}
+
+void state(struct evt *evt)
+{
+	int i;
+
+	for (i = 0; i < NELEMS(state_tbl); i++) {
+		if (siproxy.state == state_tbl[i].state) {
+			state_tbl[i].func(evt);
+		}
+	}
+}
+
+void *evt_handler(void *threadid)
+{
+	int ret = -1;
+	struct msg msg;
+	struct evt *evt;
+	
+	while (1) {
+		if (queue_length(&events_queue) > 0 && (ret = queue_get(&events_queue, NULL, &msg)) == 0) {
+			evt = msg.data;
+			state(evt);
+			
+			/* free the event after handler it */
+			free(evt);
+			evt = NULL;
+		} else {
+			sleep(1);
+		}
+	}
+}
+
 int main(int argc, char **argv)
 {
 	char buffer[4096] = {0};
 	int rs;
 	int sock;
 	int uart;
+	int rc;
 	struct sockaddr_in addr;
 	struct pollfd pfd[2];
 	struct addrinfo *ai;
@@ -353,10 +1111,15 @@ int main(int argc, char **argv)
 	/* free address lookup info */
 	freeaddrinfo(ai);
 
-	atexit(_cleanup);
+	atexit(cleanup);
 
 	/* set input echoing on by default */
 	do_echo = 1;
+
+	if (queue_init(&events_queue) == -1) {
+		fprintf(stderr, "event queue init failed: %s\n", strerror(errno));
+		return -1;
+	}
 
 	/* initialize serial port for modem control */
 	int bdrate = 115200;
@@ -376,6 +1139,18 @@ int main(int argc, char **argv)
 
 	/* initialize telnet */
 	telnet = telnet_init(telopts, sip_event, 0, &sock);
+
+	siproxy.uart_fd = uart;
+	siproxy.sock_fd = sock;
+	snprintf(siproxy.sip_peer, sizeof(siproxy.sip_peer), "%s", argv[3]);
+	snprintf(siproxy.uart, sizeof(siproxy.uart), "%s", argv[4]);
+
+	/* create the event handler thread */
+	rc = pthread_create(&siproxy.thread, NULL, evt_handler, NULL);
+	if (rc) {
+		fprintf(stderr, "ERROR; return code from pthread_create() is %s\n", strerror(errno));
+		exit(-1);
+	}
 	
 	/* initialize poll descriptors */
 	memset(pfd, 0, sizeof(pfd));

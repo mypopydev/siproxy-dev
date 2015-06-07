@@ -1,11 +1,12 @@
-SRCS := main.c rs232.c telnet.c match.c
+SRCS := main.c rs232.c telnet.c match.c queue.c
 PROG := siproxy
 CC   := gcc
 CFLAGS := -g -O0 -Wall
+LDFLAGS:= -lrt -pthread
 OBJS   := $(SRCS:.c=.o)
 
 $(PROG): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 -include $(SRCS:.c=.d)
 
