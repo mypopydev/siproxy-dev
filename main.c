@@ -28,22 +28,23 @@
 
 #define NELEMS(array) (sizeof(array) / sizeof(array[0]))
 
-struct queue events_queue; /* event queue */
+struct queue events_queue; /* events queue */
 
 struct evt {
 	int event;
 	char val[1024];
 };
 
-/* Read characters from 'fd' until a newline is encountered. If a newline
-  character is not encountered in the first (n - 1) bytes, then the excess
-  characters are discarded. The returned string placed in 'buf' is
-  null-terminated and includes the newline character if it was read in the
-  first (n - 1) bytes. The function return value is the number of bytes
-  placed in buffer (which includes the newline character if encountered,
-  but excludes the terminating null byte). */
-static ssize_t
-read_line(int fd, void *buffer, size_t n)
+/* 
+ * read characters from 'fd' until a newline is encountered. If a newline
+ * character is not encountered in the first (n - 1) bytes, then the excess
+ * characters are discarded. The returned string placed in 'buf' is
+ * null-terminated and includes the newline character if it was read in the
+ * first (n - 1) bytes. The function return value is the number of bytes
+ * placed in buffer (which includes the newline character if encountered,
+ * but excludes the terminating null byte). 
+ */
+static ssize_t read_line(int fd, void *buffer, size_t n)
 {
 	ssize_t num_read;                       /* # of bytes fetched by last read() */
 	size_t tot_read;                        /* total bytes read so far */
@@ -88,7 +89,7 @@ read_line(int fd, void *buffer, size_t n)
 	return tot_read;
 }
 
-/* send comand "cmd" to modem and wait the "respond" from modem */
+/* send command "cmd" to modem and wait the "respond" from modem */
 static int modem_cmd_wait(int uart, char *cmd, char *respond)
 {
 	unsigned char buf[4096] = {0};
@@ -120,7 +121,7 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 	return 0;
 }
 
-/* send comand "cmd" to modem */
+/* send comand "cmd" to modem and need to handle the respond async */
 static int modem_cmd(int uart, char *cmd)
 {
 	printf("\n\nT:>>sent : %s", cmd);
@@ -128,6 +129,10 @@ static int modem_cmd(int uart, char *cmd)
 
 	return 0;
 }
+
+/*
+ * modem util functions
+ */
 
 static int modem_make_call(int uart, char *num)
 {
@@ -448,6 +453,10 @@ static void telnet_input(char *buffer, int size)
 	fflush(stdout);
 }
 
+/*
+ * sip util functions
+ */
+
 static void sip_make_call(char *peer)
 {
 	char cmd[256] = {0};
@@ -563,15 +572,18 @@ static void sip_event(telnet_t *telnet, telnet_event_t *ev,
 		char delim[] = "\n";
 		char *token = NULL;
 		char *str = (char *)ev->data.buffer;
-		
+
+		/* break the str with newline, then map it to sip event */
 		for (token = strtok(str, delim); token; token = strtok(NULL, delim)) {
 			sip_event_queue(token, strlen(token));
 		}
 		break;
+		
 	/* data must be sent */
 	case TELNET_EV_SEND:
 		_send(sock, ev->data.buffer, ev->data.size);
 		break;
+		
 	/* request to enable remote feature (or receipt) */
 	case TELNET_EV_WILL:
 		/* we'll agree to turn off our echo if server
@@ -579,17 +591,21 @@ static void sip_event(telnet_t *telnet, telnet_event_t *ev,
 		if (ev->neg.telopt == TELNET_TELOPT_ECHO)
 			do_echo = 0;
 		break;
+		
 	/* notification of disabling remote feature (or receipt) */
 	case TELNET_EV_WONT:
 		if (ev->neg.telopt == TELNET_TELOPT_ECHO)
 			do_echo = 1;
 		break;
+		
 	/* request to enable local feature (or receipt) */
 	case TELNET_EV_DO:
 		break;
+		
 	/* demand to disable local feature (or receipt) */
 	case TELNET_EV_DONT:
 		break;
+		
 	/* respond to TTYPE commands */
 	case TELNET_EV_TTYPE:
 		/* respond with our terminal type, if requested */
@@ -597,13 +613,16 @@ static void sip_event(telnet_t *telnet, telnet_event_t *ev,
 			telnet_ttype_is(telnet, getenv("TERM"));
 		}
 		break;
+		
 	/* respond to particular subnegotiations */
 	case TELNET_EV_SUBNEGOTIATION:
 		break;
+		
 	/* error */
 	case TELNET_EV_ERROR:
 		fprintf(stderr, "ERROR: %s\n", ev->error.msg);
 		exit(-1);
+		
 	default:
 		/* ignore */
 		break;
@@ -1049,7 +1068,8 @@ void *evt_handler(void *threadid)
 	struct evt *evt;
 	
 	while (1) {
-		if (queue_length(&events_queue) > 0 && (ret = queue_get(&events_queue, NULL, &msg)) == 0) {
+		if (queue_length(&events_queue) > 0 && 
+		    (ret = queue_get(&events_queue, NULL, &msg)) == 0) {
 			evt = msg.data;
 			state(evt);
 			
