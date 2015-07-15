@@ -25,6 +25,7 @@
 #include "rs232.h"
 #include "match.h"
 #include "queue.h"
+#include "mqtt.h"
 
 #define NELEMS(array) (sizeof(array) / sizeof(array[0]))
 
@@ -266,8 +267,14 @@ enum EVENT {
 	EVT_SIP_EARLY,       
 	EVT_SIP_CONNECTING,  
 	EVT_SIP_CONFIRMED,   
-	EVT_SIP_DISCONNCTD,  
+	EVT_SIP_DISCONNCTD,
 
+	EVT_SIP_MAX,          /* last sip event */
+
+	/* mqtt event */
+	EVT_MQTT_CALLING = EVT_SIP_MAX + 1,      /* Broker -> SIP_A (phone) */
+	EVT_MQTT_CALLED,                         /* SIP_A -> Broker */
+	
 	EVT_UNKNOW,
 };
 
@@ -340,7 +347,7 @@ struct event_map sip_events[] = {
 	},
 };
 
-static enum EVENT find_event(char *buf, int size, struct event_map *events , int num)
+static enum EVENT find_event(char *buf, int size, struct event_map *events, int num)
 {
 	int i;
 
@@ -396,9 +403,16 @@ enum CALL_INIT {
 	INIT_FROM_SIP,
 };
 
+/* the sip peer status */
+enum PEER_STATUS {
+	PEER_OFFLINE,
+	PEER_ONLINE,
+};
+
 struct siproxy_ctrl {
 	int sip_state;
 	int modem_state;
+	int mqtt_state;
 
 	int state;
 	
@@ -406,6 +420,9 @@ struct siproxy_ctrl {
 
 	char uart[255];        /* uart name for modem control */
 	char sip_peer[255];    /* sip peer URL */
+	int sip_peer_status;   /* online or offline */
+	char sim_num[255];     /* the other phone number, 
+				  get from modem or mqtt */
 
 	int uart_fd;
 	int sock_fd;
@@ -414,10 +431,13 @@ struct siproxy_ctrl {
 
 	int dbg_level;
 } siproxy = {
-	.sip_state = STATE_INIT,
+	.sip_state   = STATE_INIT,
 	.modem_state = STATE_INIT,
+	.mqtt_state  = STATE_INIT,
 
 	.state = STATE_INIT,
+
+	.sip_peer_status = PEER_OFFLINE,
 
 	.init_dir = INIT_NONE,
 
@@ -1077,6 +1097,7 @@ void *evt_handler(void *threadid)
 			free(evt);
 			evt = NULL;
 		} else {
+			/* no event */
 			sleep(1);
 		}
 	}
@@ -1167,6 +1188,9 @@ int main(int argc, char **argv)
 	siproxy.sock_fd = sock;
 	snprintf(siproxy.sip_peer, sizeof(siproxy.sip_peer), "%s", argv[3]);
 	snprintf(siproxy.uart, sizeof(siproxy.uart), "%s", argv[4]);
+
+	/* initialize MQTT client */
+	mqtt_init();
 
 	/* create the event handler thread */
 	rc = pthread_create(&siproxy.thread, NULL, evt_handler, NULL);

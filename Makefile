@@ -1,10 +1,6 @@
-SRCS := main.c rs232.c telnet.c match.c queue.c
+SRCS := main.c rs232.c telnet.c match.c queue.c mqtt.c
 PROG := siproxy
 CC   := gcc
-CFLAGS := -g -O0 -Wall
-LDFLAGS:= -lrt -lpthread
-OBJS   := $(SRCS:.c=.o)
-
 CURDIR := $(shell pwd)
 
 LIBS = paho-mqtt3a
@@ -12,6 +8,10 @@ LINKFLAGS = $(addprefix -l,$(LIBS))
 LIBPATH = $(CURDIR)/paho-c/build/output/
 LIBINCLUDE = $(CURDIR)/paho-c/src/
 LIBPATHS = $(patsubst %,$(LIBPATH)/lib%.so, $(LIBS))
+
+CFLAGS := -g -O0 -Wall -I$(LIBINCLUDE)
+LDFLAGS:= -lrt -lpthread
+OBJS   := $(SRCS:.c=.o)
 
 
 $(PROG): $(OBJS)
@@ -21,7 +21,8 @@ $(PROG): $(OBJS)
 -include $(SRCS:.c=.d)
 
 $.d:%.c
-	@$(CC) -MM $(CFLAGS) $< | sed 's#\(.*\)\.o:#\1.o\1\1.d:#g' > $@
+	@$(CC) -MM -I$(LIBINCLUDE) $(CFLAGS) $< | sed 's#\(.*\)\.o:#\1.o\1\1.d:#g' > $@
+
 
 .PHONY: all
 all: $(PROG)
