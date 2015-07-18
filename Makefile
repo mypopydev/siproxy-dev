@@ -1,4 +1,4 @@
-SRCS := main.c rs232.c telnet.c match.c queue.c mqtt.c
+SRCS := main.c rs232.c telnet.c match.c queue.c
 PROG := siproxy
 CC   := gcc
 CURDIR := $(shell pwd)
