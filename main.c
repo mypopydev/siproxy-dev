@@ -33,25 +33,25 @@
 #define CLIENTID    "100001Alice"
 #define PEERID      "200002Bob"
 
-/* topic status */
+/* Pub self/ Sub perr topic status */
 #define TOPIC_STATUS       "/"CLIENTID"/Status"
 #define PEERID_STATUS      "/"PEERID"/Status"
+
 #define ONLINE             "Online"
 #define OFFLINE            "Offline"
 
-/* topic phone number Bob -> Alice, then ACK, 
+/* Sub: topic phone number Bob -> Alice, then ACK, 
  * Bob Pub, Alice Sub, then Alice ACK  */
 #define TOPIC_BOB_CALLING  "/"PEERID"/Calling/PhoneOther"
 #define TOPIC_ACK_BOB      "/"CLIENTID"/Get/PhoneOther"
 
-/* topic phone number Bob <- Alice, then ACK,
+/* Pub: topic phone number Bob <- Alice, then ACK,
    Alice Pub, Alice Sub, then Bob ACK */
 #define TOPIC_ALICE_CALLED "/"CLIENTID"/Called/PhoneOther"
 #define TOPIC_ALICE_ACK    "/"PEERID"Get/PhoneOther"
 
 #define QOS         2
 #define TIMEOUT     10000L
-
 
 #define NELEMS(array) (sizeof(array) / sizeof(array[0]))
 
@@ -355,6 +355,24 @@ static void sip_event_queue(char *buf, int size)
 	}
 }
 
+static void mqtt_event_queue(char *topic, char *playload, int palyloadlen)
+{
+	enum EVENT event = EVT_NONE;
+
+	event = find_event(topic, strlen(topic), mqtt_events, NELEMS(mqtt_events));
+	if (event != EVT_NONE) {
+		struct evt *evt = malloc(sizeof(*evt));
+		if (!evt) {
+			fprintf(stderr, "malloc failed: %s\n", strerror(errno));
+			return;
+		}
+		evt->event = event;
+		snprintf(evt->val, palyloadlen+1, "%s", playload);
+		
+		queue_add(&events_queue, evt, evt->event);
+	}
+}
+
 /* the call init from */
 enum CALL_INIT {
 	INIT_NONE,
@@ -616,8 +634,8 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 	}
 	putchar('\n');
 	
-	/* XXX: mqtt event queue */
-	//mqtt_event_queue(topicName, payloadptr, message->payloadlen);
+	/* XXX: get mqtt event and queue */
+	mqtt_event_queue(topicName, message->payload, message->payloadlen);
 	
 	MQTTAsync_freeMessage(&message);
 	MQTTAsync_free(topicName);
@@ -675,7 +693,7 @@ void onConnect(void *context, MQTTAsync_successData *response)
 
 	/* subcribing to status topic */
 	MQTTAsync_responseOptions substat_opts = MQTTAsync_responseOptions_initializer;
-	printf("M:sub to topic %s\nfor client %s using QoS %d\n", PEERID_STATUS, CLIENTID, QOS);
+	printf("M:sub to topic %s for client %s using QoS %d\n\n", PEERID_STATUS, CLIENTID, QOS);
 	substat_opts.onSuccess = onSubscribe;
 	substat_opts.onFailure = onSubscribeFailure;
 	substat_opts.context = client;
@@ -688,7 +706,7 @@ void onConnect(void *context, MQTTAsync_successData *response)
 
 	/* subcribing to phone number topic */
 	MQTTAsync_responseOptions subphone_opts = MQTTAsync_responseOptions_initializer;
-	printf("M:sub to topic %s\nfor client %s using QoS %d\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
+	printf("M:sub to topic %s for client %s using QoS %d\n\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
 	subphone_opts.onSuccess = onSubscribe;
 	subphone_opts.onFailure = onSubscribeFailure;
 	subphone_opts.context = client;
@@ -705,8 +723,14 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 	MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
 	MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
 	int rc;
+	int i;
 
 	printf("M:pub topic : %s\n", topicName);
+	printf("   message: ");
+	for(i=0; i<payloadlen; i++) {
+		putchar(*payload++);
+	}
+	putchar('\n');
 
 	/* publish topic */
 	opts.onSuccess = onSend;
@@ -731,7 +755,7 @@ int mqtt_sub(char *topicName, int qos)
 	MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
 	int rc;
 
-	printf("M:subscribing to topic %s\nfor client %s using QoS%d\n\n", 
+	printf("M:subscribing to topic %s for client %s using QoS%d\n\n", 
 	       topicName, CLIENTID, qos);
 	opts.onSuccess = onSubscribe;
 	opts.onFailure = onSubscribeFailure;
@@ -831,6 +855,7 @@ static void siproxy_reset()
 {
 	siproxy.sip_state   = STATE_INIT;
 	siproxy.modem_state = STATE_INIT;
+	siproxy.mqtt_state = STATE_INIT;
 		
 	siproxy.state = STATE_INIT;
 
@@ -911,12 +936,35 @@ struct state_tbl {
 void state_init(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		strncpy(siproxy.sim_num, evt->val, strlen(evt->val));
+		siproxy.mqtt_state = STATE_INCOMING;
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+
+		/*
+		 * modem events
+		 */
 	case EVT_MODEM_CLIP:
 		if (siproxy.init_dir == INIT_NONE) {
 			siproxy.init_dir = INIT_FROM_MODEM;
 
 			siproxy.modem_state = STATE_INCOMING;
-			
+			/* pub phone number and call sip perr */
+			char phone[256];
+			char *start = NULL;
+			char *end = NULL;
+			start = strstr(evt->val, "\"");
+			if (start) {
+				end = strstr(start+1, "\"");
+			}
+			memcpy(phone, start+1, end - (start+1));
+			mqtt_pub(TOPIC_ALICE_CALLED, phone, strlen(phone));
 			sip_make_call(siproxy.sip_peer);
 			siproxy.sip_state = STATE_CALLING;
 
@@ -939,18 +987,21 @@ void state_init(struct evt *evt)
 	case EVT_MODEM_ERROR:
 		/* do nothing */
 		break;
-		
+
+		/*
+		 * sip events
+		 */
 	case EVT_SIP_CALLING:
 		/* do nothing */
 		break;
 		
 	case EVT_SIP_INCOMING:
-		if (siproxy.init_dir == INIT_NONE) {
+		if (siproxy.init_dir == INIT_NONE && siproxy.mqtt_state == STATE_INCOMING) {
 			siproxy.init_dir = INIT_FROM_SIP;
 
 			siproxy.sip_state = STATE_INCOMING;
 			
-			modem_make_call(siproxy.uart_fd, "13182845505"); /* FIXME: fix the number */
+			modem_make_call(siproxy.uart_fd, siproxy.sim_num);
 			siproxy.modem_state = STATE_CALLING;
 
 			siproxy.state = STATE_INCOMING;
@@ -978,6 +1029,18 @@ void state_init(struct evt *evt)
 void state_incoming(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+
+		/*
+		 * modem events
+		 */		
 	case EVT_MODEM_CLIP:
 		break;
 		
@@ -1000,7 +1063,10 @@ void state_incoming(struct evt *evt)
 		
 	case EVT_MODEM_ERROR:
 		break;
-		
+
+		/*
+		 * sip events
+		 */
 	case EVT_SIP_CALLING:
 		break;
 		
@@ -1033,6 +1099,18 @@ void state_incoming(struct evt *evt)
 void state_calling(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+		
+		/*
+		 * modem events
+		 */
 	case EVT_MODEM_CLIP:
 		break;
 		
@@ -1047,7 +1125,10 @@ void state_calling(struct evt *evt)
 		
 	case EVT_MODEM_ERROR:
 		break;
-		
+
+		/*
+		 * sip events
+		 */		
 	case EVT_SIP_CALLING:
 		break;
 		
@@ -1072,6 +1153,18 @@ void state_calling(struct evt *evt)
 void state_early(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+
+		/*
+		 * modem events
+		 */		
 	case EVT_MODEM_CLIP:
 		break;
 		
@@ -1087,6 +1180,9 @@ void state_early(struct evt *evt)
 	case EVT_MODEM_ERROR:
 		break;
 		
+		/*
+		 * sip events
+		 */		
 	case EVT_SIP_CALLING:
 		break;
 		
@@ -1111,6 +1207,18 @@ void state_early(struct evt *evt)
 void state_connecting(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+
+		/*
+		 * modem events
+		 */		
 	case EVT_MODEM_CLIP:
 		break;
 		
@@ -1125,7 +1233,10 @@ void state_connecting(struct evt *evt)
 		
 	case EVT_MODEM_ERROR:
 		break;
-		
+
+		/*
+		 * sip events
+		 */		
 	case EVT_SIP_CALLING:
 		break;
 		
@@ -1150,6 +1261,18 @@ void state_connecting(struct evt *evt)
 void state_confirmed(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+		
+		/*
+		 * modem events
+		 */
 	case EVT_MODEM_CLIP:
 		break;
 		
@@ -1172,7 +1295,10 @@ void state_confirmed(struct evt *evt)
 		
 	case EVT_MODEM_ERROR:
 		break;
-		
+
+		/*
+		 * sip events
+		 */
 	case EVT_SIP_CALLING:
 		break;
 		
@@ -1205,6 +1331,18 @@ void state_confirmed(struct evt *evt)
 void state_disconnctd(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+
+		/*
+		 * modem events
+		 */		
 	case EVT_MODEM_CLIP:
 		break;
 		
@@ -1219,7 +1357,10 @@ void state_disconnctd(struct evt *evt)
 		
 	case EVT_MODEM_ERROR:
 		break;
-		
+
+		/*
+		 * sip events
+		 */		
 	case EVT_SIP_CALLING:
 		break;
 		
@@ -1244,6 +1385,18 @@ void state_disconnctd(struct evt *evt)
 void state_terminated(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+
+		/*
+		 * modem events
+		 */		
 	case EVT_MODEM_CLIP:
 		break;
 		
@@ -1258,7 +1411,10 @@ void state_terminated(struct evt *evt)
 		
 	case EVT_MODEM_ERROR:
 		break;
-		
+
+		/*
+		 * sip events
+		 */	
 	case EVT_SIP_CALLING:
 		break;
 		
@@ -1283,6 +1439,18 @@ void state_terminated(struct evt *evt)
 void state_unknow(struct evt *evt)
 {
 	switch (evt->event) {
+		/*
+		 * mqtt events
+		 */
+	case EVT_MQTT_CALLING:
+		break;
+		
+	case EVT_MQTT_STATUS:
+		break;
+		
+		/*
+		 * modem events
+		 */
 	case EVT_MODEM_CLIP:
 		break;
 		
@@ -1297,7 +1465,10 @@ void state_unknow(struct evt *evt)
 		
 	case EVT_MODEM_ERROR:
 		break;
-		
+
+		/*
+		 * modem events
+		 */		
 	case EVT_SIP_CALLING:
 		break;
 		
@@ -1346,7 +1517,7 @@ void *evt_handler(void *threadid)
 			free(evt);
 			evt = NULL;
 		} else {
-			/* no event */
+			/* no event, sleep */
 			sleep(1);
 		}
 	}
