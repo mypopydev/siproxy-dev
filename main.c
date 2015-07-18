@@ -21,20 +21,12 @@
 #include <errno.h>
 #include <pthread.h>
 
+#include "util.h"
 #include "telnet.h"
 #include "rs232.h"
 #include "match.h"
 #include "queue.h"
 #include "mqtt.h"
-
-#define NELEMS(array) (sizeof(array) / sizeof(array[0]))
-
-struct queue events_queue; /* events queue */
-
-struct evt {
-	int event;
-	char val[1024];
-};
 
 /* 
  * read characters from 'fd' until a newline is encountered. If a newline

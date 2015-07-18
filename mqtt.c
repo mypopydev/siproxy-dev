@@ -4,7 +4,10 @@
 #include <unistd.h>
 
 #include "MQTTAsync.h"
+
+#include "util.h"
 #include "mqtt.h"
+#include "queue.h"
 
 MQTTAsync client;
 volatile MQTTAsync_token deliveredtoken;
@@ -110,7 +113,7 @@ void onConnect(void *context, MQTTAsync_successData *response)
 
 	/* subcribing to status topic */
 	MQTTAsync_responseOptions substat_opts = MQTTAsync_responseOptions_initializer;
-	printf("M:sub to topic %s\nfor client %s using QoS %d\n\n", PEERID_STATUS, CLIENTID, QOS);
+	printf("M:sub to topic %s\nfor client %s using QoS %d\n", PEERID_STATUS, CLIENTID, QOS);
 	substat_opts.onSuccess = onSubscribe;
 	substat_opts.onFailure = onSubscribeFailure;
 	substat_opts.context = client;
@@ -122,13 +125,13 @@ void onConnect(void *context, MQTTAsync_successData *response)
 	}
 
 	/* subcribing to phone number topic */
-	MQTTAsync_responseOptions sub_opts = MQTTAsync_responseOptions_initializer;
-	printf("M:sub to topic %s\nfor client %s using QoS %d\n\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
-	sub_opts.onSuccess = onSubscribe;
-	sub_opts.onFailure = onSubscribeFailure;
-	sub_opts.context = client;
+	MQTTAsync_responseOptions subphone_opts = MQTTAsync_responseOptions_initializer;
+	printf("M:sub to topic %s\nfor client %s using QoS %d\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
+	subphone_opts.onSuccess = onSubscribe;
+	subphone_opts.onFailure = onSubscribeFailure;
+	subphone_opts.context = client;
 
-	if ((rc = MQTTAsync_subscribe(client, TOPIC_BOB_CALLING, QOS, &sub_opts)) != MQTTASYNC_SUCCESS)
+	if ((rc = MQTTAsync_subscribe(client, TOPIC_BOB_CALLING, QOS, &subphone_opts)) != MQTTASYNC_SUCCESS)
 	{
 		printf("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
