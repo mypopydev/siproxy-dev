@@ -701,7 +701,7 @@ void state_init(struct evt *evt)
 
 			siproxy.sip_state = STATE_INCOMING;
 			
-			modem_make_call(siproxy.uart_fd, "13761124413"); /* FIXME: fix the number */
+			modem_make_call(siproxy.uart_fd, "13182845505"); /* FIXME: fix the number */
 			siproxy.modem_state = STATE_CALLING;
 
 			siproxy.state = STATE_INCOMING;

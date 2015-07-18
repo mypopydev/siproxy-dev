@@ -1,4 +1,13 @@
 INTERFACE=eth0
 IPADDRESS=`ip addr show dev eth0 | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1 -d'/'
 
-./siproxy $IPADDRESS 1213 sip:200002@121.42.52.171 /dev/ttyUSB0
+export LD_LIBRARY_PATH=/home/barry/Project/siproxy-dev/paho-c/build/output:$LD_LIBRARY_PATH
+
+./siproxy 72.163.255.51 1213 sip:200002@121.42.52.171 /dev/ttyUSB0
+
+mosquitto_pub -d -h 121.42.52.171 -t /100001Alice/Called/PhoneOther -m 13761124413
+
+mosquitto_pub -d -h 121.42.52.171 -t /200002Bob/Status -m Online
+
+121.42.52.171/root/arychennow
+

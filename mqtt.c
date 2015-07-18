@@ -4,29 +4,7 @@
 #include <unistd.h>
 
 #include "MQTTAsync.h"
-
-#define ADDRESS     "tcp://121.42.52.171:1883"
-
-#define CLIENTID    "10001Alice"
-#define PEERID      "20002Bob"
-
-/* topic status */
-#define TOPIC_STATUS       "/"CLIENTID"/Status"
-#define ONLINE             "Online"
-#define OFFLINE            "Offline"
-
-/* topic phone number Bob -> Alice, then ACK, 
- * Bob Pub, Alice Sub, then Alice ACK  */
-#define TOPIC_BOB_CALLING  "/"PEERID"/Calling/PhoneOther"
-#define TOPIC_ACK_BOB      "/"CLIENTID"/Get/PhoneOther"
-
-/* topic phone number Bob <- Alice, then ACK,
-   Alice Pub, Alice Sub, then Bob ACK */
-#define TOPIC_ALICE_CALLED "/"CLIENTID"/Called/PhoneOther"
-#define TOPIC_ALICE_ACK    "/"PEERID"Get/PhoneOther"
-
-#define QOS         2
-#define TIMEOUT     10000L
+#include "mqtt.h"
 
 MQTTAsync client;
 volatile MQTTAsync_token deliveredtoken;
@@ -88,7 +66,7 @@ void onDisconnect(void *context, MQTTAsync_successData *response)
 
 void onSend(void *context, MQTTAsync_successData *response)
 {
-	printf("M:message with token value %d delivery confirmed\n", response->token);
+	printf("M:pub message with token value %d delivery confirmed\n", response->token);
 }
 
 void onConnectFailure(void *context, MQTTAsync_failureData *response)
@@ -98,12 +76,12 @@ void onConnectFailure(void *context, MQTTAsync_failureData *response)
 
 void onSubscribe(void* context, MQTTAsync_successData* response)
 {
-	printf("M:subscribe succeeded\n");
+	printf("M:sub succeeded\n");
 }
 
 void onSubscribeFailure(void* context, MQTTAsync_failureData* response)
 {
-	printf("M:subscribe failed, rc %d\n", response ? response->code : 0);
+	printf("M:sub failed, rc %d\n", response ? response->code : 0);
 }
 
 void onConnect(void *context, MQTTAsync_successData *response)
@@ -129,6 +107,32 @@ void onConnect(void *context, MQTTAsync_successData *response)
 		printf("M:failed to start sendMessage, return code %d\n", rc);
  		exit(-1);	
 	}
+
+	/* subcribing to status topic */
+	MQTTAsync_responseOptions substat_opts = MQTTAsync_responseOptions_initializer;
+	printf("M:sub to topic %s\nfor client %s using QoS %d\n\n", PEERID_STATUS, CLIENTID, QOS);
+	substat_opts.onSuccess = onSubscribe;
+	substat_opts.onFailure = onSubscribeFailure;
+	substat_opts.context = client;
+
+	if ((rc = MQTTAsync_subscribe(client, PEERID_STATUS, QOS, &substat_opts)) != MQTTASYNC_SUCCESS)
+	{
+		printf("M:failed to start subscribe, return code %d\n", rc);
+		exit(-1);	
+	}
+
+	/* subcribing to phone number topic */
+	MQTTAsync_responseOptions sub_opts = MQTTAsync_responseOptions_initializer;
+	printf("M:sub to topic %s\nfor client %s using QoS %d\n\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
+	sub_opts.onSuccess = onSubscribe;
+	sub_opts.onFailure = onSubscribeFailure;
+	sub_opts.context = client;
+
+	if ((rc = MQTTAsync_subscribe(client, TOPIC_BOB_CALLING, QOS, &sub_opts)) != MQTTASYNC_SUCCESS)
+	{
+		printf("M:failed to start subscribe, return code %d\n", rc);
+		exit(-1);	
+	}
 }
 
 int mqtt_pub(char *topicName, char *payload, int payloadlen)
@@ -137,7 +141,7 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 	MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
 	int rc;
 
-	printf("M:publish topic : %s\n", topicName);
+	printf("M:pub topic : %s\n", topicName);
 
 	/* publish topic */
 	opts.onSuccess = onSend;
