@@ -175,6 +175,18 @@ struct event_map sip_events[] = {
 	},
 };
 
+struct event_map mqtt_events[] = {
+	{
+		.event = EVT_MQTT_CALLING,
+		.regex = TOPIC_BOB_CALLING,
+	},
+
+	{
+		.event = EVT_MQTT_STATUS,
+		.regex = PEERID_STATUS,
+	},
+};
+
 static enum EVENT find_event(char *buf, int size, struct event_map *events, int num)
 {
 	int i;
@@ -307,94 +319,6 @@ static int modem_hangup_call(int uart)
 static telnet_t *telnet;
 static int do_echo;
 
-/*
- * state define
- */
-enum STATE {
-	STATE_INIT = 0,
-	STATE_INCOMING,    /* SIP_A <- SIP_B or modem_A <- modem_O */
-	STATE_CALLING,     /* SIP_A -> SIP_B or modem_A -> modem_O */
-	STATE_EARLY,       
-	STATE_CONNECTING,  
-	STATE_CONFIRMED,   
-	STATE_DISCONNCTD,  
-	STATE_TERMINATED,  
-	STATE_UNKNOW,
-};
-
-typedef void (*callback)(struct evt *evt);
-
-/* state machine */
-void state_init(struct evt *evt);
-void state_incoming(struct evt *evt);
-void state_calling(struct evt *evt);
-void state_early(struct evt *evt);
-void state_connecting(struct evt *evt);
-void state_confirmed(struct evt *evt);
-void state_disconnctd(struct evt *evt);
-void state_terminated(struct evt *evt);
-void state_unknow(struct evt *evt);
-
-struct state_tbl {
-	int state;
-	char *str;
-	callback func;
-} state_tbl[] = {
-	{
-		.state = STATE_INIT,
-		.str = "IN INIT",
-		.func = state_init,
-	},
-	
-	{
-		.state = STATE_INCOMING,
-		.str = "CALL INCOMING",
-		.func = state_incoming,
-	},
-	
-	{
-		.state = STATE_CALLING,
-		.str = "IN CALLING",
-		.func = state_calling,
-	},
-	
-	{
-		.state = STATE_EARLY,
-		.str = "EARLY",
-		.func = state_early,
-	},
-	
-	{
-		.state = STATE_CONNECTING,
-		.str = "IN CONNECTING",
-		.func = state_connecting,
-	},
-	
-	{
-		.state = STATE_CONFIRMED,
-		.str = "CALL CONFIRMED",
-		.func = state_confirmed,
-	},
-	
-	{
-		.state = STATE_DISCONNCTD,
-		.str = "DISCONNCTD",
-		.func = state_disconnctd,
-	},
-	
-	{
-		.state = STATE_TERMINATED,
-		.str = "TERMINATED",
-		.func = state_terminated,
-	},
-	
-	{
-		.state = STATE_UNKNOW,
-		.str = "UNKNOW",
-		.func = state_unknow,
-	},
-};
-
 static void modem_event_queue(char *buf, int size)
 {
 	enum EVENT event = EVT_NONE;
@@ -444,45 +368,6 @@ enum PEER_STATUS {
 	PEER_ONLINE,
 };
 
-struct siproxy_ctrl {
-	int sip_state;
-	int modem_state;
-	int mqtt_state;
-
-	int state;
-	
-	int init_dir;
-
-	char uart[255];        /* uart name for modem control */
-	char sip_peer[255];    /* sip peer URL */
-	int sip_peer_status;   /* online or offline */
-	char sim_num[255];     /* the other phone number, 
-				  get from modem or mqtt */
-
-	int uart_fd;
-	int sock_fd;
-
-	pthread_t thread;      /* event handler thread */
-
-	int dbg_level;
-} siproxy = {
-	.sip_state   = STATE_INIT,
-	.modem_state = STATE_INIT,
-	.mqtt_state  = STATE_INIT,
-
-	.state = STATE_INIT,
-
-	.sip_peer_status = PEER_OFFLINE,
-
-	.init_dir = INIT_NONE,
-
-	.uart_fd = -1,
-	.sock_fd = -1,
-
-	.thread = -1,
-
-	.dbg_level = 0,
-};
 
 static void telnet_input(char *buffer, int size) 
 {
@@ -884,6 +769,64 @@ int mqtt_init()
  	return rc;
 }
 
+/*
+ * state define
+ */
+enum STATE {
+	STATE_INIT = 0,
+	STATE_INCOMING,    /* SIP_A <- SIP_B or modem_A <- modem_O */
+	STATE_CALLING,     /* SIP_A -> SIP_B or modem_A -> modem_O */
+	STATE_EARLY,       
+	STATE_CONNECTING,  
+	STATE_CONFIRMED,   
+	STATE_DISCONNCTD,  
+	STATE_TERMINATED,  
+	STATE_UNKNOW,
+};
+
+typedef void (*callback)(struct evt *evt);
+
+
+struct siproxy_ctrl {
+	int sip_state;
+	int modem_state;
+	int mqtt_state;
+
+	int state;
+	
+	int init_dir;
+
+	char uart[255];        /* uart name for modem control */
+	char sip_peer[255];    /* sip peer URL */
+	int sip_peer_status;   /* online or offline */
+	char sim_num[255];     /* the other phone number, 
+				  get from modem or mqtt */
+
+	int uart_fd;
+	int sock_fd;
+
+	pthread_t thread;      /* event handler thread */
+
+	int dbg_level;
+} siproxy = {
+	.sip_state   = STATE_INIT,
+	.modem_state = STATE_INIT,
+	.mqtt_state  = STATE_INIT,
+
+	.state = STATE_INIT,
+
+	.sip_peer_status = PEER_OFFLINE,
+
+	.init_dir = INIT_NONE,
+
+	.uart_fd = -1,
+	.sock_fd = -1,
+
+	.thread = -1,
+
+	.dbg_level = 0,
+};
+
 static void siproxy_reset()
 {
 	siproxy.sip_state   = STATE_INIT;
@@ -893,6 +836,77 @@ static void siproxy_reset()
 
 	siproxy.init_dir = INIT_NONE;
 }
+
+/* state machine */
+void state_init(struct evt *evt);
+void state_incoming(struct evt *evt);
+void state_calling(struct evt *evt);
+void state_early(struct evt *evt);
+void state_connecting(struct evt *evt);
+void state_confirmed(struct evt *evt);
+void state_disconnctd(struct evt *evt);
+void state_terminated(struct evt *evt);
+void state_unknow(struct evt *evt);
+
+struct state_tbl {
+	int state;
+	char *str;
+	callback func;
+} state_tbl[] = {
+	{
+		.state = STATE_INIT,
+		.str = "IN INIT",
+		.func = state_init,
+	},
+	
+	{
+		.state = STATE_INCOMING,
+		.str = "CALL INCOMING",
+		.func = state_incoming,
+	},
+	
+	{
+		.state = STATE_CALLING,
+		.str = "IN CALLING",
+		.func = state_calling,
+	},
+	
+	{
+		.state = STATE_EARLY,
+		.str = "EARLY",
+		.func = state_early,
+	},
+	
+	{
+		.state = STATE_CONNECTING,
+		.str = "IN CONNECTING",
+		.func = state_connecting,
+	},
+	
+	{
+		.state = STATE_CONFIRMED,
+		.str = "CALL CONFIRMED",
+		.func = state_confirmed,
+	},
+	
+	{
+		.state = STATE_DISCONNCTD,
+		.str = "DISCONNCTD",
+		.func = state_disconnctd,
+	},
+	
+	{
+		.state = STATE_TERMINATED,
+		.str = "TERMINATED",
+		.func = state_terminated,
+	},
+	
+	{
+		.state = STATE_UNKNOW,
+		.str = "UNKNOW",
+		.func = state_unknow,
+	},
+};
 
 void state_init(struct evt *evt)
 {
