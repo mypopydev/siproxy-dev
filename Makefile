@@ -16,12 +16,12 @@ OBJS   := $(SRCS:.c=.o)
 
 $(PROG): $(OBJS)
 	@$(MAKE) -C paho-c
-	$(CC) $(CFLAGS) -I$(LIBINCLUDE) $(LDFLAGS) $(LINKFLAGS) -L$(LIBPATH) -o $@ $^
+	$(CC) $(CFLAGS) -L$(LIBPATH) -o $@ $^ $(LDFLAGS) $(LINKFLAGS)
 
 -include $(SRCS:.c=.d)
 
 $.d:%.c
-	@$(CC) -MM -I$(LIBINCLUDE) $(CFLAGS) $< | sed 's#\(.*\)\.o:#\1.o\1\1.d:#g' > $@
+	@$(CC) -MM $(CFLAGS) $< | sed 's#\(.*\)\.o:#\1.o\1\1.d:#g' > $@
 
 
 .PHONY: all
