@@ -76,6 +76,7 @@ enum EVENT {
 	EVT_MODEM_COLP,        /* +COLP:xxx, the call is connectd */
 	EVT_MODEM_CLIP,        /* +CLIP:xxx, the call incomming  */
 	EVT_MODEM_NO_CARRIER,  /* NO CARRIER */
+	EVT_MODEM_BUSY,        /* BUSY */
 	EVT_MODEM_OK,          /* OK */  
 	EVT_MODEM_ERROR,       /* ERROR */   
 
@@ -132,6 +133,11 @@ struct event_map modem_events[] = {
 		.regex = "NO CARRIER",
 	},
 
+	{
+		.event = EVT_MODEM_BUSY,
+		.regex = "BUSY",
+	},
+	
 	{
 		.event = EVT_MODEM_OK,
 		.regex = "OK",
@@ -977,6 +983,7 @@ void state_init(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
 		/* do nothing */
 		break;
 		
@@ -1056,6 +1063,15 @@ void state_incoming(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
+		if (siproxy.init_dir == INIT_FROM_SIP) {
+			sip_hangup_call();
+		}
+		
+		if (siproxy.init_dir == INIT_FROM_MODEM) {
+			sip_hangup_call();
+		}
+		siproxy_reset();
 		break;
 		
 	case EVT_MODEM_OK:
@@ -1088,6 +1104,14 @@ void state_incoming(struct evt *evt)
 		break;
 		
 	case EVT_SIP_DISCONNCTD:
+		if (siproxy.init_dir == INIT_FROM_MODEM) {
+			modem_hangup_call(siproxy.uart_fd);
+		}
+		
+		if (siproxy.init_dir == INIT_FROM_SIP) {
+			modem_hangup_call(siproxy.uart_fd);
+		}
+		siproxy_reset();
 		break;
 		
 	default:
@@ -1118,6 +1142,7 @@ void state_calling(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
 		break;
 		
 	case EVT_MODEM_OK:
@@ -1172,6 +1197,7 @@ void state_early(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
 		break;
 		
 	case EVT_MODEM_OK:
@@ -1226,6 +1252,7 @@ void state_connecting(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
 		break;
 		
 	case EVT_MODEM_OK:
@@ -1280,6 +1307,7 @@ void state_confirmed(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
 		if (siproxy.init_dir == INIT_FROM_SIP) {
 			sip_hangup_call();
 		}
@@ -1350,6 +1378,7 @@ void state_disconnctd(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
 		break;
 		
 	case EVT_MODEM_OK:
@@ -1404,6 +1433,7 @@ void state_terminated(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
 		break;
 		
 	case EVT_MODEM_OK:
@@ -1458,6 +1488,7 @@ void state_unknow(struct evt *evt)
 		break;
 		
 	case EVT_MODEM_NO_CARRIER:
+	case EVT_MODEM_BUSY:
 		break;
 		
 	case EVT_MODEM_OK:
@@ -1496,6 +1527,7 @@ void state(struct evt *evt)
 
 	for (i = 0; i < NELEMS(state_tbl); i++) {
 		if (siproxy.state == state_tbl[i].state) {
+			printf("STATE: -> %s\n", state_tbl[i].str);
 			state_tbl[i].func(evt);
 		}
 	}
