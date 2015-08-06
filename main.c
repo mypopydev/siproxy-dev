@@ -961,7 +961,7 @@ void state_init(struct evt *evt)
 			siproxy.init_dir = INIT_FROM_MODEM;
 
 			siproxy.modem_state = STATE_INCOMING;
-			/* pub phone number and call sip perr */
+			/* pub phone number and call sip peer */
 			char phone[256];
 			char *start = NULL;
 			char *end = NULL;
