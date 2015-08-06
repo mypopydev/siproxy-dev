@@ -273,10 +273,10 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 	while (1) {
 		n = read_line(uart, buf, 4095);
 		
-		if(n > 0) {
+		if (n > 0) {
 			buf[n] = 0;   /* always put a "null" at the end of a string! */
 			
-			for (i=0; i < n; i++) {
+			for (i = 0; i < n; i++) {
 				if (buf[i] < 32) {  /* replace unreadable control-codes by dots */
 					buf[i] = '.';
 				}
@@ -285,7 +285,7 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 			
 		}
 		
-		if ( n > 0 && match(respond, (char *)buf))
+		if (n > 0 && match(respond, (char *)buf))
 			break;
 	}
 
@@ -487,7 +487,7 @@ static void modem_event(unsigned char *buf, int n)
 	if (n > 0) {
 		buf[n] = 0;   /* always put a "null" at the end of a string! */
 		
-		for (i=0; i < n; i++) {
+		for (i = 0; i < n; i++) {
 			if (buf[i] < 32) {  /* replace unreadable control-codes by dots */
 				buf[i] = '.';
 			}
@@ -635,7 +635,7 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 	printf("   message: ");
 	
 	payloadptr = message->payload;
-	for(i=0; i<message->payloadlen; i++) {
+	for (i = 0; i < message->payloadlen; i++) {
 		putchar(*payloadptr++);
 	}
 	putchar('\n');
@@ -734,7 +734,7 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 
 	printf("M:pub topic : %s\n", topicName);
 	printf("   message: ");
-	for (i=0; i<payloadlen; i++) {
+	for (i = 0; i < payloadlen; i++) {
 		putchar(*payload++);
 	}
 	putchar('\n');
