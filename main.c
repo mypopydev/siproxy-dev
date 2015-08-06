@@ -692,7 +692,8 @@ void onConnect(void *context, MQTTAsync_successData *response)
 	pubmsg.retained = 1;
 	deliveredtoken = 0;
 
-	if ((rc = MQTTAsync_sendMessage(client, TOPIC_STATUS, &pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
+	if ((rc = MQTTAsync_sendMessage(client, TOPIC_STATUS, 
+					&pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
 		printf("M:failed to start sendMessage, return code %d\n", rc);
  		exit(-1);	
 	}
@@ -704,8 +705,8 @@ void onConnect(void *context, MQTTAsync_successData *response)
 	substat_opts.onFailure = onSubscribeFailure;
 	substat_opts.context = client;
 
-	if ((rc = MQTTAsync_subscribe(client, PEERID_STATUS, QOS, &substat_opts)) != MQTTASYNC_SUCCESS)
-	{
+	if ((rc = MQTTAsync_subscribe(client, PEERID_STATUS, QOS, 
+				      &substat_opts)) != MQTTASYNC_SUCCESS) {
 		printf("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
 	}
@@ -717,8 +718,8 @@ void onConnect(void *context, MQTTAsync_successData *response)
 	subphone_opts.onFailure = onSubscribeFailure;
 	subphone_opts.context = client;
 
-	if ((rc = MQTTAsync_subscribe(client, TOPIC_BOB_CALLING, QOS, &subphone_opts)) != MQTTASYNC_SUCCESS)
-	{
+	if ((rc = MQTTAsync_subscribe(client, TOPIC_BOB_CALLING, 
+				      QOS, &subphone_opts)) != MQTTASYNC_SUCCESS) {
 		printf("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
 	}
@@ -733,7 +734,7 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 
 	printf("M:pub topic : %s\n", topicName);
 	printf("   message: ");
-	for(i=0; i<payloadlen; i++) {
+	for (i=0; i<payloadlen; i++) {
 		putchar(*payload++);
 	}
 	putchar('\n');
@@ -748,7 +749,8 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 	pubmsg.retained = 1;
 	deliveredtoken = 0;
 
-	if ((rc = MQTTAsync_sendMessage(client, topicName, &pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
+	if ((rc = MQTTAsync_sendMessage(client, topicName, &pubmsg, 
+					&opts)) != MQTTASYNC_SUCCESS) {
 		printf("M:failed to start sendMessage, return code %d\n", rc);
  		exit(-1);	
 	}
@@ -767,8 +769,8 @@ int mqtt_sub(char *topicName, int qos)
 	opts.onFailure = onSubscribeFailure;
 	opts.context = client;
 
-	if ((rc = MQTTAsync_subscribe(client, topicName, qos, &opts)) != MQTTASYNC_SUCCESS)
-	{
+	if ((rc = MQTTAsync_subscribe(client, topicName, qos, 
+				      &opts)) != MQTTASYNC_SUCCESS) {
 		printf("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
 	}
@@ -791,7 +793,7 @@ int mqtt_init()
 	conn_opts.onFailure = onConnectFailure;
 	conn_opts.context = client;
 	addWillOptions(&conn_opts);
-	if ((rc = MQTTAsync_connect(client, &conn_opts)) != MQTTASYNC_SUCCESS){
+	if ((rc = MQTTAsync_connect(client, &conn_opts)) != MQTTASYNC_SUCCESS) {
 		printf("M:failed to start connect, return code %d\n", rc);
 		exit(-1);	
 	}
@@ -1647,7 +1649,8 @@ int main(int argc, char **argv)
 	/* create the event handler thread */
 	rc = pthread_create(&siproxy.thread, NULL, evt_handler, NULL);
 	if (rc) {
-		fprintf(stderr, "ERROR; return code from pthread_create() is %s\n", strerror(errno));
+		fprintf(stderr, "ERROR; return code from pthread_create() is %s\n", 
+			strerror(errno));
 		exit(-1);
 	}
 	
