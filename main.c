@@ -43,10 +43,10 @@
 /* Sub: topic phone number Bob -> Alice, then ACK, 
  * Bob Pub, Alice Sub, then Alice ACK  */
 #define TOPIC_BOB_CALLING  "/"PEERID"/Calling/PhoneOther"
-#define TOPIC_ACK_BOB      "/"CLIENTID"/Get/PhoneOther"
+#define TOPIC_BOB_ACK      "/"CLIENTID"/Get/PhoneOther"
 
 /* Pub: topic phone number Bob <- Alice, then ACK,
-   Alice Pub, Alice Sub, then Bob ACK */
+   Alice Pub, Bob Sub, then Bob ACK */
 #define TOPIC_ALICE_CALLED "/"CLIENTID"/Called/PhoneOther"
 #define TOPIC_ALICE_ACK    "/"PEERID"Get/PhoneOther"
 
