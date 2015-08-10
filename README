@@ -15,6 +15,8 @@ mosquitto_pub -d -h 121.42.52.171 -t /100001Alice/Called/PhoneOther -m 137611244
 
 mosquitto_pub -d -h 121.42.52.171 -t /200002Bob/Status -m Online
 
+mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/Called/PhoneOther
+
 121.42.52.171/root/arychennow
 
 coTrun don't support RFC 5780 if don't have 2 public IP address
