@@ -734,8 +734,9 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 
 	printf("M:pub topic : %s\n", topicName);
 	printf("   message: ");
+	char *start = payload;
 	for (i = 0; i < payloadlen; i++) {
-		putchar(*payload++);
+		putchar(*start++);
 	}
 	putchar('\n');
 
@@ -964,7 +965,7 @@ void state_init(struct evt *evt)
 
 			siproxy.modem_state = STATE_INCOMING;
 			/* pub phone number and call sip peer */
-			char phone[256];
+			char phone[256] = {0};
 			char *start = NULL;
 			char *end = NULL;
 			start = strstr(evt->val, "\"");
