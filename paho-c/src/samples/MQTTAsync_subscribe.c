@@ -25,7 +25,8 @@
 
 #define ADDRESS     "tcp://121.42.52.171:1883"
 #define CLIENTID    "ExampleClientSub"
-#define TOPIC       "/10001Alice/Status"
+//#define TOPIC       "/10001Alice/Status"
+#define TOPIC       "/100001Alice/Called/PhoneOther"
 #define PAYLOAD     "Hello World!"
 #define QOS         1
 #define TIMEOUT     10000L
