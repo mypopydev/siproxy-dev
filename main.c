@@ -33,7 +33,7 @@
 #define CLIENTID    "100001Alice"
 #define PEERID      "200002Bob"
 
-/* Pub self/ Sub perr topic status */
+/* Pub self/ Sub peer topic status */
 #define TOPIC_STATUS       "/"CLIENTID"/Status"
 #define PEERID_STATUS      "/"PEERID"/Status"
 
@@ -49,6 +49,10 @@
    Alice Pub, Bob Sub, then Bob ACK */
 #define TOPIC_ALICE_CALLED "/"CLIENTID"/Called/PhoneOther"
 #define TOPIC_ALICE_ACK    "/"PEERID"Get/PhoneOther"
+
+/* Pub self/ Sub peer topic SMS */
+#define TOPIC_SMS       "/"CLIENTID"/SMS"
+#define PEERID_SMS      "/"PEERID"/SMS"
 
 #define QOS         2
 #define TIMEOUT     10000L
@@ -79,7 +83,8 @@ enum EVENT {
 	EVT_MODEM_BUSY,        /* BUSY */
 	EVT_MODEM_OK,          /* OK */  
 	EVT_MODEM_ERROR,       /* ERROR */   
-
+	EVT_MODEM_SMS,         /* +CMTI: "SM",xxx */
+	
 	EVT_MODEM_MAX,         /* last modem event */
 
 	
@@ -101,6 +106,7 @@ enum EVENT {
 	EVT_MQTT_CALLING = EVT_SIP_MAX + 1,      /* Broker -> SIP_A (phone) */
 	EVT_MQTT_CALLED,                         /* SIP_A -> Broker */
 	EVT_MQTT_STATUS,                         /* Peer online or offline */
+	EVT_MQTT_SMS,                            /* Peer send SMS */
 
 	EVT_MQTT_MAX,          /* last mqtt event */
 	
@@ -147,6 +153,11 @@ struct event_map modem_events[] = {
 		.event = EVT_MODEM_ERROR,
 		.regex = "ERROR",
 	},
+
+	{
+		.event = EVT_MODEM_SMS,
+		.regex = "+CMTI: \"SM\"",
+	},
 };
 
 struct event_map sip_events[] = {
@@ -190,6 +201,11 @@ struct event_map mqtt_events[] = {
 	{
 		.event = EVT_MQTT_STATUS,
 		.regex = PEERID_STATUS,
+	},
+	
+	{
+		.event = EVT_MQTT_SMS,
+		.regex = PEERID_SMS,
 	},
 };
 
@@ -720,6 +736,19 @@ void onConnect(void *context, MQTTAsync_successData *response)
 
 	if ((rc = MQTTAsync_subscribe(client, TOPIC_BOB_CALLING, 
 				      QOS, &subphone_opts)) != MQTTASYNC_SUCCESS) {
+		printf("M:failed to start subscribe, return code %d\n", rc);
+		exit(-1);	
+	}
+
+	/* subcribing to SMS topic */
+	MQTTAsync_responseOptions subsms_opts = MQTTAsync_responseOptions_initializer;
+	printf("M:sub to topic %s for client %s using QoS %d\n\n", PEERID_SMS, CLIENTID, QOS);
+	subsms_opts.onSuccess = onSubscribe;
+	subsms_opts.onFailure = onSubscribeFailure;
+	subsms_opts.context = client;
+
+	if ((rc = MQTTAsync_subscribe(client, PEERID_SMS, 
+				      QOS, &subsms_opts)) != MQTTASYNC_SUCCESS) {
 		printf("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
 	}
