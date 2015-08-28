@@ -338,15 +338,28 @@ static int modem_hangup_call(int uart)
 	return modem_cmd(uart, "ATH\r\n");
 }
 
+static int modem_get_sms(int uart, char *index)
+{
+	char cmd[128] = {0};
+	snprintf(cmd, sizeof(cmd), "AT+CMGR=%s\r\n", index);
+	return modem_cmd(uart, cmd);
+}
+
 static telnet_t *telnet;
 static int do_echo;
 
+void modem_event_sms_queue(char *buf, int size);
 static void modem_event_queue(char *buf, int size)
 {
 	enum EVENT event = EVT_NONE;
 
 	event = find_event(buf, size, modem_events, NELEMS(modem_events));
 	if (event != EVT_NONE) {
+		if (event == EVT_MODEM_SMS) {
+			modem_event_sms_queue(buf, size);
+			return;
+		}
+		
 		struct evt *evt = malloc(sizeof(*evt));
 		if (!evt) {
 			fprintf(stderr, "malloc failed: %s\n", strerror(errno));
@@ -356,6 +369,8 @@ static void modem_event_queue(char *buf, int size)
 		snprintf(evt->val, sizeof(evt->val), "%s", buf);
 		
 		queue_add(&events_queue, evt, evt->event);
+
+		return;
 	}
 }
 
@@ -898,6 +913,70 @@ static void siproxy_reset()
 	siproxy.state = STATE_INIT;
 
 	siproxy.init_dir = INIT_NONE;
+}
+
+void modem_event_sms_queue(char *buf, int size)
+{
+	char index[8] = {0};
+	char *start = NULL;
+	char *end = NULL;
+	char buffer[4096] = {0};
+	int n,i;
+
+	/* XXX: pass the MMS */
+	if (match("MMS PUSH", buf))
+		return;
+	
+	struct evt *evt = malloc(sizeof(*evt));
+	if (!evt) {
+		fprintf(stderr, "malloc failed: %s\n", strerror(errno));
+		return;
+	}
+
+	/* +CMTI: "SM",3, find the index to get the SMS */
+	start = strstr(buf, ",");
+	if ((end = strstr(buf, ".")) != NULL) {
+		memcpy(index, start+1, end - (start+1));
+	}
+	if (start) {
+		modem_get_sms(siproxy.uart_fd, index);
+		usleep(500000);
+	}
+
+	while (1) {
+		n = read_line(siproxy.uart_fd, buffer, 4095);
+		if (n > 0) {
+			buffer[n] = 0;   /* always put a "null" at the end of a string! */
+			
+			for (i = 0; i < n; i++) {
+				if (buffer[i] < 32) {  /* replace unreadable control-codes by dots */
+					buffer[i] = '.';
+				}
+			}
+			printf("T:<<recv : %s\n", (char *)buffer);
+			
+		}			
+		
+		/* pass the +CMGR: 0,"",28 */
+		if (n > 0 && match("+CMGR:", (char *)buffer))
+			continue;
+
+		/* pass newline */
+		if (n > 0 && buffer[0] == '.')
+			continue;
+
+		/* break when get OK */
+		if (n > 0 && match("OK", (char *)buffer))
+			break;
+		
+		evt->event = EVT_MODEM_SMS;
+		snprintf(evt->val, sizeof(evt->val), "%s", buffer);
+		printf("E:<<recv : %s\n", (char *)buffer);
+	}
+
+	queue_add(&events_queue, evt, evt->event);
+
+	return;
 }
 
 /* state machine */
@@ -1664,6 +1743,10 @@ int main(int argc, char **argv)
 	modem_cmd_wait(uart, "ATE1\r\n", "OK");
 	modem_cmd_wait(uart, "AT+COLP=1\r\n", "OK");
 	modem_cmd_wait(uart, "AT+CLIP=1\r\n", "OK");
+
+	/* SMS with PDU mode and USC2 support */
+	modem_cmd_wait(uart, "AT+CMGF=0\r\n", "OK");
+	modem_cmd_wait(uart, "AT+CSCS=\"UCS2\"\r\n", "OK");
 
 	/* initialize telnet */
 	telnet = telnet_init(telopts, sip_event, 0, &sock);
