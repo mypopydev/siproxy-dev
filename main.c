@@ -345,6 +345,25 @@ static int modem_get_sms(int uart, char *index)
 	return modem_cmd(uart, cmd);
 }
 
+static int modem_delete_sms(int uart, char *index)
+{
+	char cmd[128] = {0};
+	snprintf(cmd, sizeof(cmd), "AT+CMGD=%s\r\n", index);
+	return modem_cmd(uart, cmd);
+}
+
+static int modem_send_sms(int uart, char *pdu, int tpdu_len)
+{
+	char cmd[128] = {0};
+	char data[4096] = {0};
+	snprintf(cmd, sizeof(cmd), "AT+CMGS=%d\r", tpdu_len);
+	modem_cmd(uart, cmd);
+	usleep(500000);
+	snprintf(data, sizeof(data), "%s", pdu);
+	data[strlen(data)] = 0x1a;
+	return modem_cmd(uart, data);
+}
+
 static telnet_t *telnet;
 static int do_echo;
 
