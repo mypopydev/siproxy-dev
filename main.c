@@ -284,7 +284,7 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 	
 	rs232_cputs(uart, cmd);
 	printf("\n\nT:>>sent : %s", cmd);
-	sleep(1);
+	usleep(300000);
 	
 	while (1) {
 		n = read_line(uart, buf, 4095);
@@ -358,7 +358,7 @@ static int modem_send_sms(int uart, char *pdu, int tpdu_len)
 	char data[4096] = {0};
 	snprintf(cmd, sizeof(cmd), "AT+CMGS=%d\r", tpdu_len);
 	modem_cmd(uart, cmd);
-	usleep(500000);
+	usleep(300000);
 	snprintf(data, sizeof(data), "%s", pdu);
 	data[strlen(data)] = 0x1a;
 	return modem_cmd(uart, data);
@@ -959,7 +959,7 @@ void modem_event_sms_queue(char *buf, int size)
 	}
 	if (start) {
 		modem_get_sms(siproxy.uart_fd, index);
-		usleep(500000);
+		usleep(300000);
 	}
 
 	while (1) {
