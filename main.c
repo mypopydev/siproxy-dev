@@ -975,6 +975,10 @@ void modem_event_sms_queue(char *buf, int size)
 			printf("T:<<recv : %s\n", (char *)buffer);
 			
 		}			
+
+		/* pass the echo AT+CMGR=18 */
+		if (n > 0 && match("AT+CMGR", (char *)buffer))
+			continue;
 		
 		/* pass the +CMGR: 0,"",28 */
 		if (n > 0 && match("+CMGR:", (char *)buffer))
@@ -989,10 +993,13 @@ void modem_event_sms_queue(char *buf, int size)
 			break;
 		
 		evt->event = EVT_MODEM_SMS;
-		snprintf(evt->val, sizeof(evt->val), "%s", buffer);
+		snprintf(evt->val, strlen(buffer) - 1, "%s", buffer);
 		printf("E:<<recv : %s\n", (char *)buffer);
 	}
 
+	/* after queue the SMS event, delete it from modem */
+	modem_delete_sms(siproxy.uart_fd, index);
+	
 	queue_add(&events_queue, evt, evt->event);
 
 	return;
@@ -1656,6 +1663,23 @@ void state(struct evt *evt)
 	int i;
 
 	for (i = 0; i < NELEMS(state_tbl); i++) {
+		/* handle SMS
+		 * XXX: SMS no states, so don't put this event to state machine */
+		switch(evt->event) {
+		case EVT_MODEM_SMS:
+			/* pub SMS to broker */
+			mqtt_pub(TOPIC_SMS, evt->val, strlen(evt->val));
+			return;
+			break;
+			
+		case EVT_MQTT_SMS:
+			/* send SMS to modem */
+			modem_send_sms(siproxy.uart_fd, evt->val, (strlen(evt->val) - 2)/2);
+			return;
+			break;
+		/* pass through */
+		}
+		
 		if (siproxy.state == state_tbl[i].state) {
 			printf("STATE: -> %s\n", state_tbl[i].str);
 			state_tbl[i].func(evt);
