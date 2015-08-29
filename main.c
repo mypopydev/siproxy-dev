@@ -942,7 +942,7 @@ void modem_event_sms_queue(char *buf, int size)
 	char buffer[4096] = {0};
 	int n,i;
 
-	/* XXX: pass the MMS */
+	/* XXX: bypass the MMS */
 	if (match("MMS PUSH", buf))
 		return;
 	
@@ -976,15 +976,15 @@ void modem_event_sms_queue(char *buf, int size)
 			
 		}			
 
-		/* pass the echo AT+CMGR=18 */
+		/* bypass the echo AT+CMGR=18 */
 		if (n > 0 && match("AT+CMGR", (char *)buffer))
 			continue;
 		
-		/* pass the +CMGR: 0,"",28 */
+		/* bypass the +CMGR: 0,"",28 */
 		if (n > 0 && match("+CMGR:", (char *)buffer))
 			continue;
 
-		/* pass newline */
+		/* bypass newline */
 		if (n > 0 && buffer[0] == '.')
 			continue;
 
