@@ -1704,7 +1704,7 @@ void *evt_handler(void *threadid)
 			evt = NULL;
 		} else {
 			/* no event, sleep */
-			sleep(1);
+			usleep(200000);
 		}
 	}
 }
