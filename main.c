@@ -59,6 +59,25 @@
 
 #define NELEMS(array) (sizeof(array) / sizeof(array[0]))
 
+#include <stdarg.h>
+#include <sys/time.h>
+
+void LOG(const char *fmt, ...) {
+	char date[20];
+	struct timeval tv;
+	va_list args;
+
+	/* print the timestamp */
+	gettimeofday(&tv, NULL);
+	strftime(date, sizeof(date)/sizeof(*date), "%Y-%m-%dT%H:%M:%S", gmtime(&tv.tv_sec));
+	printf("[%s.%03dZ] ", date, (int)tv.tv_usec/1000);
+
+	/* printf like normal */
+	va_start(args, fmt);
+	vprintf(fmt, args);
+	va_end(args);
+}
+
 struct queue events_queue; /* events queue */
 
 struct evt {
@@ -283,7 +302,7 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 	int n, i = 0;
 	
 	rs232_cputs(uart, cmd);
-	printf("\n\nT:>>sent : %s", cmd);
+	LOG("\n\nT:>>sent : %s", cmd);
 	usleep(300000);
 	
 	while (1) {
@@ -297,7 +316,7 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 					buf[i] = '.';
 				}
 			}
-			printf("T:<<recv : %s\n", (char *)buf);
+			LOG("T:<<recv : %s\n", (char *)buf);
 			
 		}
 		
@@ -311,7 +330,7 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 /* send comand "cmd" to modem and need to handle the respond async */
 static int modem_cmd(int uart, char *cmd)
 {
-	printf("\n\nT:>>sent : %s", cmd);
+	LOG("\n\nT:>>sent : %s", cmd);
 	rs232_cputs(uart, cmd);
 
 	return 0;
@@ -448,7 +467,7 @@ static void telnet_input(char *buffer, int size)
 	static char crlf[] = { '\r', '\n' };
 	int i;
 
-	printf("\n\nS:>>sent : ");
+	LOG("\n\nS:>>sent : ");
 	for (i = 0; i != size; ++i) {
 		/* if we got a CR or LF, replace with CRLF
 		 * NOTE that usually you'd get a CR in UNIX, but in raw
@@ -456,7 +475,7 @@ static void telnet_input(char *buffer, int size)
 		 */
 		if (buffer[i] == '\r' || buffer[i] == '\n') {
 			if (do_echo)
-				printf("\r\n");
+				LOG("\r\n");
 			telnet_send(telnet, crlf, 2);
 		} else {
 			if (do_echo)
@@ -542,7 +561,7 @@ static void modem_event(unsigned char *buf, int n)
 				buf[i] = '.';
 			}
 		}
-		printf("T:<<recv : %s\n", (char *)buf);
+		LOG("T:<<recv : %s\n", (char *)buf);
 		
 	}
 	fflush(stdout);
@@ -580,7 +599,7 @@ static void sip_event(telnet_t *telnet, telnet_event_t *ev,
 	switch (ev->type) {
 	/* data received */
 	case TELNET_EV_DATA:
-		printf("S:%.*s\n", (int)ev->data.size, ev->data.buffer);
+		LOG("S:%.*s\n", (int)ev->data.size, ev->data.buffer);
 		/* XXX: get sip event */
 		fflush(stdout);
 		char delim[] = "\n";
@@ -664,14 +683,14 @@ void connlost(void *context, char *cause)
 	MQTTAsync_connectOptions conn_opts = MQTTAsync_connectOptions_initializer;
 	int rc;
 
-	printf("\nM:connection lost\n");
-	printf("     cause: %s\n", cause);
+	LOG("\nM:connection lost\n");
+	LOG("     cause: %s\n", cause);
 
-	printf("M:reconnecting\n");
+	LOG("M:reconnecting\n");
 	conn_opts.keepAliveInterval = 30;
 	conn_opts.cleansession = 1;
 	if ((rc = MQTTAsync_connect(client, &conn_opts)) != MQTTASYNC_SUCCESS) {
-		printf("M:failed to start connect, return code %d\n", rc);
+		LOG("M:failed to start connect, return code %d\n", rc);
 	}
 }
 
@@ -680,9 +699,9 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 	int i;
 	char* payloadptr;
 	
-	printf("M:message arrived\n");
-	printf("     topic: %s\n", topicName);
-	printf("   message: ");
+	LOG("M:message arrived\n");
+	LOG("     topic: %s\n", topicName);
+	LOG("   message: ");
 	
 	payloadptr = message->payload;
 	for (i = 0; i < message->payloadlen; i++) {
@@ -700,27 +719,27 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 
 void onDisconnect(void *context, MQTTAsync_successData *response)
 {
-	printf("M:successful disconnection\n");
+	LOG("M:successful disconnection\n");
 }
 
 void onSend(void *context, MQTTAsync_successData *response)
 {
-	printf("M:pub message with token value %d delivery confirmed\n", response->token);
+	LOG("M:pub message with token value %d delivery confirmed\n", response->token);
 }
 
 void onConnectFailure(void *context, MQTTAsync_failureData *response)
 {
-	printf("M:connect failed, rc %d\n", response ? response->code : 0);
+	LOG("M:connect failed, rc %d\n", response ? response->code : 0);
 }
 
 void onSubscribe(void* context, MQTTAsync_successData* response)
 {
-	printf("M:sub succeeded\n");
+	LOG("M:sub succeeded\n");
 }
 
 void onSubscribeFailure(void* context, MQTTAsync_failureData* response)
 {
-	printf("M:sub failed, rc %d\n", response ? response->code : 0);
+	LOG("M:sub failed, rc %d\n", response ? response->code : 0);
 }
 
 void onConnect(void *context, MQTTAsync_successData *response)
@@ -730,7 +749,7 @@ void onConnect(void *context, MQTTAsync_successData *response)
 	MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
 	int rc;
 
-	printf("M:successful connection\n");
+	LOG("M:successful connection\n");
 
 	/* publish online status */
 	opts.onSuccess = onSend;
@@ -744,46 +763,46 @@ void onConnect(void *context, MQTTAsync_successData *response)
 
 	if ((rc = MQTTAsync_sendMessage(client, TOPIC_STATUS, 
 					&pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
-		printf("M:failed to start sendMessage, return code %d\n", rc);
+		LOG("M:failed to start sendMessage, return code %d\n", rc);
  		exit(-1);	
 	}
 
 	/* subcribing to status topic */
 	MQTTAsync_responseOptions substat_opts = MQTTAsync_responseOptions_initializer;
-	printf("M:sub to topic %s for client %s using QoS %d\n\n", PEERID_STATUS, CLIENTID, QOS);
+	LOG("M:sub to topic %s for client %s using QoS %d\n\n", PEERID_STATUS, CLIENTID, QOS);
 	substat_opts.onSuccess = onSubscribe;
 	substat_opts.onFailure = onSubscribeFailure;
 	substat_opts.context = client;
 
 	if ((rc = MQTTAsync_subscribe(client, PEERID_STATUS, QOS, 
 				      &substat_opts)) != MQTTASYNC_SUCCESS) {
-		printf("M:failed to start subscribe, return code %d\n", rc);
+		LOG("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
 	}
 
 	/* subcribing to phone number topic */
 	MQTTAsync_responseOptions subphone_opts = MQTTAsync_responseOptions_initializer;
-	printf("M:sub to topic %s for client %s using QoS %d\n\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
+	LOG("M:sub to topic %s for client %s using QoS %d\n\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
 	subphone_opts.onSuccess = onSubscribe;
 	subphone_opts.onFailure = onSubscribeFailure;
 	subphone_opts.context = client;
 
 	if ((rc = MQTTAsync_subscribe(client, TOPIC_BOB_CALLING, 
 				      QOS, &subphone_opts)) != MQTTASYNC_SUCCESS) {
-		printf("M:failed to start subscribe, return code %d\n", rc);
+		LOG("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
 	}
 
 	/* subcribing to SMS topic */
 	MQTTAsync_responseOptions subsms_opts = MQTTAsync_responseOptions_initializer;
-	printf("M:sub to topic %s for client %s using QoS %d\n\n", PEERID_SMS, CLIENTID, QOS);
+	LOG("M:sub to topic %s for client %s using QoS %d\n\n", PEERID_SMS, CLIENTID, QOS);
 	subsms_opts.onSuccess = onSubscribe;
 	subsms_opts.onFailure = onSubscribeFailure;
 	subsms_opts.context = client;
 
 	if ((rc = MQTTAsync_subscribe(client, PEERID_SMS, 
 				      QOS, &subsms_opts)) != MQTTASYNC_SUCCESS) {
-		printf("M:failed to start subscribe, return code %d\n", rc);
+		LOG("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
 	}
 }
@@ -795,8 +814,8 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 	int rc;
 	int i;
 
-	printf("M:pub topic : %s\n", topicName);
-	printf("   message: ");
+	LOG("M:pub topic : %s\n", topicName);
+	LOG("   message: ");
 	char *start = payload;
 	for (i = 0; i < payloadlen; i++) {
 		putchar(*start++);
@@ -815,7 +834,7 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 
 	if ((rc = MQTTAsync_sendMessage(client, topicName, &pubmsg, 
 					&opts)) != MQTTASYNC_SUCCESS) {
-		printf("M:failed to start sendMessage, return code %d\n", rc);
+		LOG("M:failed to start sendMessage, return code %d\n", rc);
  		exit(-1);	
 	}
 
@@ -827,7 +846,7 @@ int mqtt_sub(char *topicName, int qos)
 	MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
 	int rc;
 
-	printf("M:subscribing to topic %s for client %s using QoS%d\n\n", 
+	LOG("M:subscribing to topic %s for client %s using QoS%d\n\n", 
 	       topicName, CLIENTID, qos);
 	opts.onSuccess = onSubscribe;
 	opts.onFailure = onSubscribeFailure;
@@ -835,7 +854,7 @@ int mqtt_sub(char *topicName, int qos)
 
 	if ((rc = MQTTAsync_subscribe(client, topicName, qos, 
 				      &opts)) != MQTTASYNC_SUCCESS) {
-		printf("M:failed to start subscribe, return code %d\n", rc);
+		LOG("M:failed to start subscribe, return code %d\n", rc);
 		exit(-1);	
 	}
 
@@ -858,7 +877,7 @@ int mqtt_init()
 	conn_opts.context = client;
 	addWillOptions(&conn_opts);
 	if ((rc = MQTTAsync_connect(client, &conn_opts)) != MQTTASYNC_SUCCESS) {
-		printf("M:failed to start connect, return code %d\n", rc);
+		LOG("M:failed to start connect, return code %d\n", rc);
 		exit(-1);	
 	}
 
@@ -972,7 +991,7 @@ void modem_event_sms_queue(char *buf, int size)
 					buffer[i] = '.';
 				}
 			}
-			printf("T:<<recv : %s\n", (char *)buffer);
+			LOG("T:<<recv : %s\n", (char *)buffer);
 			
 		}			
 
@@ -994,7 +1013,7 @@ void modem_event_sms_queue(char *buf, int size)
 		
 		evt->event = EVT_MODEM_SMS;
 		snprintf(evt->val, strlen(buffer) - 1, "%s", buffer);
-		printf("E:<<recv : %s\n", (char *)buffer);
+		LOG("E:<<recv : %s\n", (char *)buffer);
 	}
 
 	/* after queue the SMS event, delete it from modem */
@@ -1681,7 +1700,7 @@ void state(struct evt *evt)
 		}
 		
 		if (siproxy.state == state_tbl[i].state) {
-			printf("STATE: -> %s\n", state_tbl[i].str);
+			LOG("STATE: -> %s\n", state_tbl[i].str);
 			state_tbl[i].func(evt);
 		}
 	}
