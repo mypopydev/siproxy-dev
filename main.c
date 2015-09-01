@@ -302,7 +302,7 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 	int n, i = 0;
 	
 	rs232_cputs(uart, cmd);
-	LOG("\n\nT:>>sent : %s", cmd);
+	LOG("T:>>sent : %s", cmd);
 	usleep(300000);
 	
 	while (1) {
@@ -330,7 +330,7 @@ static int modem_cmd_wait(int uart, char *cmd, char *respond)
 /* send comand "cmd" to modem and need to handle the respond async */
 static int modem_cmd(int uart, char *cmd)
 {
-	LOG("\n\nT:>>sent : %s", cmd);
+	LOG("T:>>sent : %s", cmd);
 	rs232_cputs(uart, cmd);
 
 	return 0;
