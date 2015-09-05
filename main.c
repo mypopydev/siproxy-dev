@@ -69,7 +69,7 @@ void LOG(const char *fmt, ...) {
 
 	/* print the timestamp */
 	gettimeofday(&tv, NULL);
-	strftime(date, sizeof(date)/sizeof(*date), "%Y-%m-%dT%H:%M:%S", gmtime(&tv.tv_sec));
+	strftime(date, NELEMS(date), "%Y-%m-%dT%H:%M:%S", gmtime(&tv.tv_sec));
 	printf("[%s.%03dZ] ", date, (int)tv.tv_usec/1000);
 
 	/* printf like normal */
