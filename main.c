@@ -69,7 +69,7 @@ void LOG(const char *fmt, ...) {
 
 	/* print the timestamp */
 	gettimeofday(&tv, NULL);
-	strftime(date, NELEMS(date), "%Y-%m-%dT%H:%M:%S", gmtime(&tv.tv_sec));
+	strftime(date, NELEMS(date), "%Y-%m-%dT%H:%M:%S", localtime(&tv.tv_sec));
 	printf("[%s.%03dZ] ", date, (int)tv.tv_usec/1000);
 
 	/* printf like normal */
@@ -683,7 +683,7 @@ void connlost(void *context, char *cause)
 	MQTTAsync_connectOptions conn_opts = MQTTAsync_connectOptions_initializer;
 	int rc;
 
-	LOG("\nM:connection lost\n");
+	LOG("M:connection lost\n");
 	LOG("     cause: %s\n", cause);
 
 	LOG("M:reconnecting\n");
@@ -769,7 +769,7 @@ void onConnect(void *context, MQTTAsync_successData *response)
 
 	/* subcribing to status topic */
 	MQTTAsync_responseOptions substat_opts = MQTTAsync_responseOptions_initializer;
-	LOG("M:sub to topic %s for client %s using QoS %d\n\n", PEERID_STATUS, CLIENTID, QOS);
+	LOG("M:sub to topic %s for client %s using QoS %d\n", PEERID_STATUS, CLIENTID, QOS);
 	substat_opts.onSuccess = onSubscribe;
 	substat_opts.onFailure = onSubscribeFailure;
 	substat_opts.context = client;
@@ -782,7 +782,7 @@ void onConnect(void *context, MQTTAsync_successData *response)
 
 	/* subcribing to phone number topic */
 	MQTTAsync_responseOptions subphone_opts = MQTTAsync_responseOptions_initializer;
-	LOG("M:sub to topic %s for client %s using QoS %d\n\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
+	LOG("M:sub to topic %s for client %s using QoS %d\n", TOPIC_BOB_CALLING, CLIENTID, QOS);
 	subphone_opts.onSuccess = onSubscribe;
 	subphone_opts.onFailure = onSubscribeFailure;
 	subphone_opts.context = client;
@@ -795,7 +795,7 @@ void onConnect(void *context, MQTTAsync_successData *response)
 
 	/* subcribing to SMS topic */
 	MQTTAsync_responseOptions subsms_opts = MQTTAsync_responseOptions_initializer;
-	LOG("M:sub to topic %s for client %s using QoS %d\n\n", PEERID_SMS, CLIENTID, QOS);
+	LOG("M:sub to topic %s for client %s using QoS %d\n", PEERID_SMS, CLIENTID, QOS);
 	subsms_opts.onSuccess = onSubscribe;
 	subsms_opts.onFailure = onSubscribeFailure;
 	subsms_opts.context = client;
