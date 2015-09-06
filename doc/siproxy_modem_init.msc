@@ -1,0 +1,43 @@
+# SIP proxy protocol with an intermediate proxy/MQTT
+msc {
+    #arcgradient = 15;
+
+    "SIM_O", "SIM_A", "SIP Alice", Opensips, "MQTT Server", "SIP Bob";
+
+    "SIM_O"->"SIM_A"           [label="Call SIM_A (S1)"];
+    "SIM_A"->"SIP Alice"       [label="Get Phone Num (S2)"];
+    
+    "SIP Alice"->"MQTT Server" [label="Alice Pub Phone Num (M3)"];
+    "MQTT Server"->"SIP Bob"   [label="Bob get Phone Num (M4)"];
+
+    "SIM_O"<-"SIM_A"           [label=" XXX: SIM_A ACK (S3)"];
+    ---       [label="SIP Proxy Bridge Modem/SIP Alice"];
+    ...;
+    
+    ---;
+
+    "SIP Alice"=>Opensips [label="INVITE (F1)"];
+    "SIP Alice"<=Opensips [label="100 Trying (F2)"];
+    Opensips=>"SIP Bob"   [label="INVITE (F3)"];
+    Opensips<="SIP Bob"   [label="100 Trying (F4)"];
+    Opensips<="SIP Bob"   [label="180 Ringing (F5)"];
+    "SIP Alice"<=Opensips [label="180 Ringing (F6)"];
+    ---       [label="Alice plays ringing"];
+    ...;
+
+    ---       [label="Bob answers"];
+    Opensips<="SIP Bob"   [label="200 Ok (F7)"];
+    "SIP Alice"<=Opensips [label="200 Ok (F8)"];
+    "SIP Alice"=>Opensips [label="ACK (F9)"];
+    Opensips=>"SIP Bob"   [label="ACK (F10)"];
+    ---       [label="two way media"];
+    ...;
+
+    ---       [label="Bob hangs up"];
+    Opensips<="SIP Bob"   [label="BYE (F11)"];
+    Opensips=>"SIP Bob"   [label="200 Ok (F12)"];
+    "SIP Alice"<=Opensips [label="BYE (F13)"];
+    "SIP Alice"=>Opensips [label="200 Ok (F14)"];
+
+    "SIM_O"<-"SIM_A"      [label="SIM_A hangs up (S4)"];
+}
