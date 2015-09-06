@@ -25,6 +25,8 @@ mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/SMS
 
 121.42.52.171/root/arychennow
 
+./bin/turnserver -c turnserver.conf.new
+
 coTrun don't support RFC 5780 if don't have 2 public IP address
 
 stun.stunprotocol.org // STUN Server (2 Pub IP address)
