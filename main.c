@@ -677,9 +677,10 @@ static void addWillOptions(MQTTAsync_connectOptions *connectOptions)
 	connectOptions->will = &willOptions;
 }
 
+void onConnect(void *context, MQTTAsync_successData *response);
+void onConnectFailure(void *context, MQTTAsync_failureData *response);
 void connlost(void *context, char *cause)
 {
-	MQTTAsync client = (MQTTAsync)context;
 	MQTTAsync_connectOptions conn_opts = MQTTAsync_connectOptions_initializer;
 	int rc;
 
@@ -689,6 +690,11 @@ void connlost(void *context, char *cause)
 	LOG("M:reconnecting\n");
 	conn_opts.keepAliveInterval = 30;
 	conn_opts.cleansession = 1;
+	conn_opts.onSuccess = onConnect;
+	conn_opts.onFailure = onConnectFailure;
+	conn_opts.context = client;
+	addWillOptions(&conn_opts);
+	
 	if ((rc = MQTTAsync_connect(client, &conn_opts)) != MQTTASYNC_SUCCESS) {
 		LOG("M:failed to start connect, return code %d\n", rc);
 	}
