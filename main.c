@@ -1025,7 +1025,7 @@ void modem_event_sms_queue(char *buf, int size)
 		   but the other used '\n' */
 		buf_len = strlen(buffer);
 		len = buf_len;
-		if (buffer[buf_len - 2] == '.')
+		if (buf_len > 2 && buffer[buf_len - 2] == '.')
 			len = buf_len - 1;
 		snprintf(evt->val, len, "%s", buffer);
 		LOG("E:<<recv : %s\n", evt->val);
