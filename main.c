@@ -965,7 +965,9 @@ void modem_event_sms_queue(char *buf, int size)
 	char *start = NULL;
 	char *end = NULL;
 	char buffer[4096] = {0};
+	int buf_len;
 	int n,i;
+	size_t len;
 
 	/* XXX: bypass the MMS */
 	if (match("MMS PUSH", buf))
@@ -1018,8 +1020,15 @@ void modem_event_sms_queue(char *buf, int size)
 			break;
 		
 		evt->event = EVT_MODEM_SMS;
-		snprintf(evt->val, strlen(buffer) - 1, "%s", buffer);
-		LOG("E:<<recv : %s\n", (char *)buffer);
+
+		/* some modem used newline with '\r\n', 
+		   but the other used '\n' */
+		buf_len = strlen(buffer);
+		len = buf_len;
+		if (buffer[buf_len - 2] == '.')
+			len = buf_len - 1;
+		snprintf(evt->val, len, "%s", buffer);
+		LOG("E:<<recv : %s\n", evt->val);
 	}
 
 	/* after queue the SMS event, delete it from modem */
