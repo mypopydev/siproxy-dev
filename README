@@ -21,7 +21,7 @@ mosquitto_pub -d -h 121.42.52.171 -t /200002Bob/Status -m Online
 
 mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/Called/PhoneOther
 
-mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/SMS
+mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/SMS/+
 
 121.42.52.171/root/arychennow
 
