@@ -1695,14 +1695,25 @@ void state_unknow(struct evt *evt)
 void state(struct evt *evt)
 {
 	int i;
+	char uuid[20];
+	char sms_topic[64];
+	struct timeval tv;
 
 	for (i = 0; i < NELEMS(state_tbl); i++) {
 		/* handle SMS
 		 * XXX: SMS no states, so don't put this event to state machine */
 		switch(evt->event) {
 		case EVT_MODEM_SMS:
-			/* pub SMS to broker */
-			mqtt_pub(TOPIC_SMS, evt->val, strlen(evt->val));
+			/* pub SMS to broker
+			 *   SMS Topic format sample
+			 *       /100001Alice/SMS/uuid, now uuid used the timestamp   
+			 */
+
+			/* get the timestamp */
+			gettimeofday(&tv, NULL);
+			strftime(uuid, NELEMS(uuid), "%Y-%m-%dT%H:%M:%S", localtime(&tv.tv_sec));
+			snprintf(sms_topic, NELEMS(sms_topic), TOPIC_SMS"/%s", uuid);
+			mqtt_pub(sms_topic, evt->val, strlen(evt->val));
 			return;
 			break;
 			
