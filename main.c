@@ -1711,7 +1711,8 @@ void state(struct evt *evt)
 
 			/* get the timestamp */
 			gettimeofday(&tv, NULL);
-			strftime(uuid, NELEMS(uuid), "%Y-%m-%dT%H:%M:%S", localtime(&tv.tv_sec));
+			strftime(uuid, NELEMS(uuid), "%Y-%m-%dT%H:%M:%S", 
+				 localtime(&tv.tv_sec));
 			snprintf(sms_topic, NELEMS(sms_topic), TOPIC_SMS"/%s", uuid);
 			mqtt_pub(sms_topic, evt->val, strlen(evt->val));
 			return;
