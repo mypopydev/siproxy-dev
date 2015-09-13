@@ -13,6 +13,8 @@ export LD_LIBRARY_PATH=/home/barry/Project/siproxy-dev/paho-c/build/output:$LD_L
 
 mosquitto_pub -d -h 121.42.52.171 -t /100001Alice/Called/PhoneOther -m 13761124413
 
+mosquitto_pub -d -h 121.42.52.171 -t /100001Alice/SMS/2015-09-12T22:32:42 -m 0891683110304105F0240D91683165342873F90000519021222383230931D98C56A397E774
+
 mosquitto_pub -d -h 121.42.52.171 -t /200002Bob/Calling/PhoneOther -m 13761124413
 
 mosquitto_pub -d -h 121.42.52.171 -t /200002Bob/SMS -m 0011000B913167114214F30000AA0AE8329BFD4697D9EC37

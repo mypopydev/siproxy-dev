@@ -813,7 +813,7 @@ void onConnect(void *context, MQTTAsync_successData *response)
 	}
 }
 
-int mqtt_pub(char *topicName, char *payload, int payloadlen)
+int mqtt_pub(char *topicName, char *payload, int payloadlen, int retained)
 {
 	MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
 	MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
@@ -835,7 +835,7 @@ int mqtt_pub(char *topicName, char *payload, int payloadlen)
 	pubmsg.payload = payload;
 	pubmsg.payloadlen = payloadlen;
 	pubmsg.qos = 2;
-	pubmsg.retained = 1;
+	pubmsg.retained = retained;
 	deliveredtoken = 0;
 
 	if ((rc = MQTTAsync_sendMessage(client, topicName, &pubmsg, 
@@ -1141,7 +1141,7 @@ void state_init(struct evt *evt)
 				end = strstr(start+1, "\"");
 			}
 			memcpy(phone, start+1, end - (start+1));
-			mqtt_pub(TOPIC_ALICE_CALLED, phone, strlen(phone));
+			mqtt_pub(TOPIC_ALICE_CALLED, phone, strlen(phone), 0);
 			sip_make_call(siproxy.sip_peer);
 			siproxy.sip_state = STATE_CALLING;
 
@@ -1714,7 +1714,7 @@ void state(struct evt *evt)
 			strftime(uuid, NELEMS(uuid), "%Y-%m-%dT%H:%M:%S", 
 				 localtime(&tv.tv_sec));
 			snprintf(sms_topic, NELEMS(sms_topic), TOPIC_SMS"/%s", uuid);
-			mqtt_pub(sms_topic, evt->val, strlen(evt->val));
+			mqtt_pub(sms_topic, evt->val, strlen(evt->val), 1);
 			return;
 			break;
 			
