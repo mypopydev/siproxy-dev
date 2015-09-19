@@ -28,7 +28,8 @@
 #include "MQTTAsync.h"
 
 
-#define ADDRESS     "tcp://121.42.52.171:1883"
+//#define ADDRESS     "tcp://121.42.52.171:1883"
+#define ADDRESS     "tcp://121.42.52.171:532"
 
 #define CLIENTID    "100001Alice"
 #define PEERID      "200002Bob"
@@ -53,6 +54,12 @@
 /* Pub self/ Sub peer topic SMS */
 #define TOPIC_SMS       "/"CLIENTID"/SMS"
 #define PEERID_SMS      "/"PEERID"/SMS"
+
+/* Pub the modem status when APP init the session */
+/* Pub: topic modem status Bob <- Alice after Alice ACK the sip session */
+#define TOPIC_ALICE_MODEM "/"CLIENTID"/Modem/Status"
+
+#define MODEM_CALL_OK "Ok"
 
 #define QOS         2
 #define TIMEOUT     10000L
@@ -1182,6 +1189,13 @@ void state_init(struct evt *evt)
 			modem_make_call(siproxy.uart_fd, siproxy.sim_num);
 			siproxy.modem_state = STATE_CALLING;
 
+			/* XXX: answer the SIP, so the modem tone 
+			 *  will pass through to the APP, and the APP
+			 *  get the modem feedback from this time.
+			 */
+			sip_answer_call();
+			siproxy.sip_state = STATE_CONFIRMED;
+
 			siproxy.state = STATE_INCOMING;
 		}
 		break;
@@ -1226,8 +1240,9 @@ void state_incoming(struct evt *evt)
 		if (siproxy.init_dir == INIT_FROM_SIP) {
 			siproxy.modem_state = STATE_CONFIRMED;
 			
-			sip_answer_call();
-			siproxy.sip_state = STATE_CONFIRMED;
+			/* XXX: pub modem Ok */
+			mqtt_pub(TOPIC_ALICE_MODEM, MODEM_CALL_OK, 
+				 strlen(MODEM_CALL_OK), 0);
 
 			siproxy.state = STATE_CONFIRMED;
 		}

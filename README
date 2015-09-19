@@ -21,9 +21,9 @@ mosquitto_pub -d -h 121.42.52.171 -t /200002Bob/SMS -m 0011000B913167114214F3000
 
 mosquitto_pub -d -h 121.42.52.171 -t /200002Bob/Status -m Online
 
-mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/Called/PhoneOther
+mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/Called/PhoneOther -p 532
 
-mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/SMS/+
+mosquitto_sub -v -d -h 121.42.52.171 -t /100001Alice/SMS/+ -p 532
 
 121.42.52.171/root/arychennow
 
@@ -37,4 +37,7 @@ stun.nonoh.net
 1. Flexible "basic" mode supports running on a server with only 1 IP. Allows for responding to port mapping (binding) requests
 2. Extended "full" mode - supports running on servers with two IP address to facilitate NAT behavior detection in addition to binding requests
 3. Stun code library and client application implement all NAT detection tests specified in RFC 5780
+
+export MQTT_C_CLIENT_TRACE=ON
+export MQTT_C_CLIENT_TRACE_LEVEL=PROTOCOL
 
