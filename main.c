@@ -1124,6 +1124,7 @@ void state_init(struct evt *evt)
 		 * mqtt events
 		 */
 	case EVT_MQTT_CALLING:
+		memset(siproxy.sim_num, 0, sizeof(siproxy.sim_num));
 		strncpy(siproxy.sim_num, evt->val, strlen(evt->val));
 		siproxy.mqtt_state = STATE_INCOMING;
 		break;
