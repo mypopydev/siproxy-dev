@@ -970,6 +970,8 @@ static void siproxy_reset()
 	siproxy.state = STATE_INIT;
 
 	siproxy.init_dir = INIT_NONE;
+
+	memset(siproxy.sim_num, 0, sizeof(siproxy.sim_num));
 }
 
 void modem_event_sms_queue(char *buf, int size)
@@ -1156,6 +1158,7 @@ void state_init(struct evt *evt)
 			}
 			memcpy(phone, start+1, end - (start+1));
 			mqtt_pub(TOPIC_ALICE_CALLED, phone, strlen(phone), 0);
+			usleep(1200000); /* wait mqtt pub number finished */
 			sip_make_call(siproxy.sip_peer);
 			siproxy.sip_state = STATE_CALLING;
 
@@ -1193,16 +1196,8 @@ void state_init(struct evt *evt)
 			siproxy.init_dir = INIT_FROM_SIP;
 
 			siproxy.sip_state = STATE_INCOMING;
-			
-			modem_make_call(siproxy.uart_fd, siproxy.sim_num);
-			siproxy.modem_state = STATE_CALLING;
-
-			/* XXX: answer the SIP, so the modem tone 
-			 *  will pass through to the APP, and the APP
-			 *  get the modem feedback from this time.
-			 */
+			/* XXX: answer the SIP, wait APP confirm the call */
 			sip_answer_call();
-			siproxy.sip_state = STATE_CONFIRMED;
 
 			siproxy.state = STATE_INCOMING;
 		}
@@ -1288,6 +1283,18 @@ void state_incoming(struct evt *evt)
 		break;
 		
 	case EVT_SIP_CONFIRMED:
+		if (siproxy.init_dir == INIT_FROM_SIP) {
+			siproxy.sip_state = STATE_CONFIRMED;
+			
+			/* XXX: get confirm from APP, then modem call the other peer sim.
+			 * so the modem tone will pass through to the APP, 
+			 * and the APP get the modem feedback from this time.
+			 */
+			
+			modem_make_call(siproxy.uart_fd, siproxy.sim_num);
+			siproxy.modem_state = STATE_CALLING;
+		}
+		
 		if (siproxy.init_dir == INIT_FROM_MODEM) {
 			siproxy.sip_state = STATE_CONFIRMED;
 			
