@@ -1158,7 +1158,7 @@ void state_init(struct evt *evt)
 			}
 			memcpy(phone, start+1, end - (start+1));
 			mqtt_pub(TOPIC_ALICE_CALLED, phone, strlen(phone), 0);
-			usleep(1200000); /* wait mqtt pub number finished */
+			usleep(1200000); /* XXX: wait mqtt pub number finished */
 			sip_make_call(siproxy.sip_peer);
 			siproxy.sip_state = STATE_CALLING;
 
